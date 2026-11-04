@@ -57,7 +57,7 @@ const INITIAL_STUDENT_ACCOUNTS: LocalStudentAccount[] = [
     phone: '9876543210',
     password: 'student123',
     completedReflections: 1,
-    totalReflections: 14,
+    totalReflections: 13,
     badge: 'Class 10 Student',
     createdAt: '2026-10-15T09:30:00.000Z',
     lastLoginAt: '2026-11-04T08:00:00.000Z',
@@ -67,12 +67,12 @@ const INITIAL_STUDENT_ACCOUNTS: LocalStudentAccount[] = [
     fullName: 'Diya Patel',
     age: '14',
     classGrade: '9',
-    schoolName: 'The Mother\'s International School',
+    schoolName: "The Mother's International School",
     email: 'diya@derote.in',
     phone: '9876543211',
     password: 'password123',
-    completedReflections: 1,
-    totalReflections: 14,
+    completedReflections: 0, // In Progress
+    totalReflections: 13,
     badge: 'Class 9 Student',
     createdAt: '2026-10-18T11:15:00.000Z',
     lastLoginAt: '2026-11-03T14:20:00.000Z',
@@ -86,8 +86,8 @@ const INITIAL_STUDENT_ACCOUNTS: LocalStudentAccount[] = [
     email: 'rohan@derote.in',
     phone: '9876543212',
     password: 'password123',
-    completedReflections: 1,
-    totalReflections: 14,
+    completedReflections: 1, // Submitted
+    totalReflections: 13,
     badge: 'Class 10 Student',
     createdAt: '2026-10-20T10:00:00.000Z',
     lastLoginAt: '2026-11-02T16:45:00.000Z',
@@ -101,11 +101,56 @@ const INITIAL_STUDENT_ACCOUNTS: LocalStudentAccount[] = [
     email: 'ananya@derote.in',
     phone: '9876543213',
     password: 'password123',
-    completedReflections: 0,
-    totalReflections: 14,
+    completedReflections: 0, // Not Started
+    totalReflections: 13,
     badge: 'Class 8 Student',
     createdAt: '2026-10-25T13:40:00.000Z',
     lastLoginAt: '2026-11-01T09:10:00.000Z',
+  },
+  {
+    id: 'student_seed_05',
+    fullName: 'Kabir Sen',
+    age: '17',
+    classGrade: '11',
+    schoolName: 'DPS International, Saket',
+    email: 'kabir@derote.in',
+    phone: '9876543214',
+    password: 'password123',
+    completedReflections: 0, // In Progress
+    totalReflections: 13,
+    badge: 'Class 11 Student',
+    createdAt: '2026-10-28T10:15:00.000Z',
+    lastLoginAt: '2026-11-03T11:00:00.000Z',
+  },
+  {
+    id: 'student_seed_06',
+    fullName: 'Meera Nair',
+    age: '18',
+    classGrade: '12',
+    schoolName: 'Greenwood High International School',
+    email: 'meera@derote.in',
+    phone: '9876543215',
+    password: 'password123',
+    completedReflections: 1, // Submitted
+    totalReflections: 13,
+    badge: 'Class 12 Student',
+    createdAt: '2026-10-12T08:30:00.000Z',
+    lastLoginAt: '2026-11-02T14:10:00.000Z',
+  },
+  {
+    id: 'student_seed_07',
+    fullName: 'Zoya Khan',
+    age: '15',
+    classGrade: 'Others',
+    schoolName: 'Open Learning Collective',
+    email: 'zoya@derote.in',
+    phone: '9876543216',
+    password: 'password123',
+    completedReflections: 0, // Not Started
+    totalReflections: 13,
+    badge: 'Student',
+    createdAt: '2026-10-30T16:20:00.000Z',
+    lastLoginAt: '2026-10-30T16:20:00.000Z',
   },
 ];
 
@@ -119,10 +164,15 @@ export function getStoredRegisteredAccounts(): LocalStudentAccount[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      // Ensure demo account is always present
-      const hasDemo = parsed.some((acc) => acc.email === 'student@derote.in');
-      if (!hasDemo) {
-        parsed.unshift(INITIAL_STUDENT_ACCOUNTS[0]);
+      // Ensure all seed accounts exist if missing
+      let changed = false;
+      for (const seed of INITIAL_STUDENT_ACCOUNTS) {
+        if (!parsed.some((acc) => acc.id === seed.id)) {
+          parsed.push(seed);
+          changed = true;
+        }
+      }
+      if (changed) {
         localStorage.setItem(STORAGE_KEY_ACCOUNTS, JSON.stringify(parsed));
       }
       return parsed;
