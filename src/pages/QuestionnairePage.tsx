@@ -248,7 +248,7 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
           )}
           <button
             type="button"
-            onClick={() => onNavigate('/')}
+            onClick={() => onNavigate('/dashboard')}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E2EDF8] bg-white hover:bg-[#F2F7FC] text-xs font-semibold text-[#062B50] hover:text-[#0866C6] transition-colors cursor-pointer"
           >
             <Home className="w-3.5 h-3.5 text-[#0866C6]" />

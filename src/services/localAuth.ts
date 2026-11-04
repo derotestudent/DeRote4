@@ -412,35 +412,6 @@ export async function createStudentAccount(data: {
   return { success: true, student: newStudent };
 }
 
-export async function updateStudentProfile(
-  studentId: string,
-  updates: Partial<LocalStudentAccount>
-): Promise<{ success: boolean; student?: LocalStudentAccount; error?: string }> {
-  try {
-    const current = getCurrentStudent();
-    if (!current || current.id !== studentId) {
-      return { success: false, error: 'Student session not found or unauthorized.' };
-    }
-
-    const updated: LocalStudentAccount = {
-      ...current,
-      ...(updates.fullName ? { fullName: updates.fullName.trim() } : {}),
-      ...(updates.classGrade ? { classGrade: updates.classGrade.trim() } : {}),
-      ...(updates.schoolName ? { schoolName: updates.schoolName.trim() } : {}),
-      ...(updates.phone !== undefined ? { phone: updates.phone.trim() } : {}),
-    };
-
-    const accounts = getStoredRegisteredAccounts();
-    const updatedAccounts = accounts.map((acc) => (acc.id === studentId ? { ...acc, ...updated } : acc));
-    saveRegisteredAccounts(updatedAccounts);
-
-    setStoredStudent(updated);
-    return { success: true, student: updated };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Failed to update profile.';
-    return { success: false, error: msg };
-  }
-}
 
 export async function sendStudentPasswordResetEmail(
   emailOrMobile: string
@@ -545,4 +516,51 @@ export function syncStudentProfileFromPart1(
 
   return updated;
 }
+
+/**
+ * Updates editable profile fields (Age and Class).
+ * Name and School/Institution are permanently locked.
+ * Crucially, does not modify or delete any previously submitted questionnaire answers.
+ */
+export function updateStudentProfile(updates: {
+  age: string;
+  classGrade: string;
+}): { success: boolean; student?: LocalStudentAccount; error?: string } {
+  const current = getCurrentStudent();
+  if (!current) {
+    return { success: false, error: 'No active student session found.' };
+  }
+
+  const cleanAge = updates.age.trim();
+  const cleanClass = updates.classGrade.trim();
+
+  if (!cleanAge) {
+    return { success: false, error: 'Please enter a valid age.' };
+  }
+  if (!cleanClass) {
+    return { success: false, error: 'Please select your class.' };
+  }
+
+  const updated: LocalStudentAccount = {
+    ...current,
+    age: cleanAge,
+    classGrade: cleanClass,
+    badge: cleanClass === 'Others' ? 'Student' : `Class ${cleanClass} Student`,
+    lastLoginAt: new Date().toISOString(),
+  };
+
+  setStoredStudent(updated);
+
+  const accounts = getStoredRegisteredAccounts();
+  const idx = accounts.findIndex((acc) => acc.id === current.id);
+  if (idx >= 0) {
+    accounts[idx] = updated;
+  } else {
+    accounts.unshift(updated);
+  }
+  saveRegisteredAccounts(accounts);
+
+  return { success: true, student: updated };
+}
+
 

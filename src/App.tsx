@@ -4,6 +4,7 @@ import { LandingPage } from './pages/LandingPage';
 import { AuthPage } from './pages/AuthPage';
 import { QuestionnairePage } from './pages/QuestionnairePage';
 import { StudentDashboardPage } from './pages/StudentDashboardPage';
+import { EditProfilePage } from './pages/EditProfilePage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { AdminLoginPage } from './pages/AdminLoginPage';
 import {
@@ -30,6 +31,7 @@ export default function App() {
     const match = (r: string) => p === r || h === `#${r}` || h === `#/${r.replace(/^\//, '')}`;
 
     if (match('/dashboard')) return '/dashboard';
+    if (match('/profile/edit') || match('/edit-profile')) return '/profile/edit';
     if (match('/signup')) return '/signup';
     if (match('/login')) return '/login';
     if (match('/admin')) return '/admin';
@@ -64,6 +66,7 @@ export default function App() {
       const match = (r: string) => p === r || h === `#${r}` || h === `#/${r.replace(/^\//, '')}`;
 
       if (match('/dashboard')) setRoute('/dashboard');
+      else if (match('/profile/edit') || match('/edit-profile')) setRoute('/profile/edit');
       else if (match('/signup')) setRoute('/signup');
       else if (match('/login')) setRoute('/login');
       else if (match('/admin')) setRoute('/admin');
@@ -115,6 +118,12 @@ export default function App() {
         </main>
       )}
 
+      {route === '/profile/edit' && (
+        <main className="flex-1 flex flex-col">
+          <EditProfilePage onNavigate={navigate} />
+        </main>
+      )}
+
       {(route === '/prototype' || route === '/questionnaire') && (
         <main className="flex-1 flex flex-col">
           <QuestionnairePage onNavigate={navigate} />
@@ -162,6 +171,7 @@ export default function App() {
       )}
 
       {route !== '/dashboard' &&
+        route !== '/profile/edit' &&
         route !== '/login' &&
         route !== '/signup' &&
         route !== '/prototype' &&

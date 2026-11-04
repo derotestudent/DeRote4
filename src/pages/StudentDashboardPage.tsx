@@ -3,103 +3,165 @@ import {
   User,
   BookOpen,
   Calendar,
+  School,
   CheckCircle2,
   Clock,
   Sparkles,
   ArrowRight,
   LogOut,
   RotateCcw,
-  Plus,
-  Trash2,
-  Check,
-  School,
-  Mail,
-  Phone,
-  Shield,
+  Edit3,
+  Eye,
+  ShieldCheck,
+  Heart,
+  Compass,
+  Sun,
+  Feather,
+  Smile,
+  X,
   FileText,
-  AlertCircle,
   Loader2,
+  Check,
 } from 'lucide-react';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
 import {
   getCurrentStudent,
   onLocalAuthChange,
   logoutStudent,
-  upgradeStudentEmail,
   syncStudentProfileFromPart1,
   LocalStudentAccount,
 } from '../services/localAuth';
 import {
-  loadStudentQuestionnaireSession,
-  resetStudentQuestionnaireSession,
-  QuestionnaireSession,
-} from '../services/questionnaireService';
-import { generateStudentInsightReport, StudentInsightReport } from '../services/insightEngine';
-import { resetSubmission } from '../services/api';
+  hasSubmitted,
+  getSubmissionData,
+  getQuestionnaireProgress,
+  resetSubmission,
+  getOrSeedStudentSubmission,
+  loadDraft,
+  SubmissionData,
+  StudentAnswers,
+} from '../services/api';
+import { SECTIONS, QUESTIONS } from '../data/questionnaire';
+import { resetStudentQuestionnaireSession } from '../services/questionnaireService';
 
 interface StudentDashboardPageProps {
   onNavigate: (route: string) => void;
-  initialTab?: 'overview' | 'planner' | 'profile';
 }
 
-interface StudentTask {
+interface SimpleReminder {
   id: string;
   title: string;
-  category: string;
-  priority: 'low' | 'medium' | 'high';
-  dueDate: string;
-  completed: boolean;
-  notes?: string;
+  text: string;
+  accentBg: string;
+  accentBorder: string;
+  iconBg: string;
+  iconColor: string;
+  icon: React.ElementType;
 }
 
-export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
-  onNavigate,
-  initialTab = 'overview',
-}) => {
+const REMINDERS: SimpleReminder[] = [
+  {
+    id: 'rem_1',
+    title: 'Your Own Pace',
+    text: "You don't have to figure out everything today. Taking things one day at a time is more than enough.",
+    accentBg: 'bg-[#F0F6FD]',
+    accentBorder: 'border-[#CCE3FC]',
+    iconBg: 'bg-[#0866C6]/10',
+    iconColor: 'text-[#0866C6]',
+    icon: Compass,
+  },
+  {
+    id: 'rem_2',
+    title: 'Your Unique Path',
+    text: 'No two journeys are the same. Focus on what brings you joy rather than comparing with others.',
+    accentBg: 'bg-[#F4F9FD]',
+    accentBorder: 'border-[#D1E6FB]',
+    iconBg: 'bg-[#062B50]/10',
+    iconColor: 'text-[#062B50]',
+    icon: Sparkles,
+  },
+  {
+    id: 'rem_3',
+    title: 'Rest Matters',
+    text: 'Pausing to rest, listen to music, or take a breath helps your mind recharge and feel clear.',
+    accentBg: 'bg-[#F2FAF6]',
+    accentBorder: 'border-[#D0EFE0]',
+    iconBg: 'bg-[#107E54]/10',
+    iconColor: 'text-[#107E54]',
+    icon: Sun,
+  },
+  {
+    id: 'rem_4',
+    title: 'Follow Curiosity',
+    text: "You don't need a final plan right now. Exploring what interests you is how passions grow.",
+    accentBg: 'bg-[#FAF6FD]',
+    accentBorder: 'border-[#EADBFC]',
+    iconBg: 'bg-[#7E3AF2]/10',
+    iconColor: 'text-[#7E3AF2]',
+    icon: Feather,
+  },
+  {
+    id: 'rem_5',
+    title: 'Room to Learn',
+    text: 'Mistakes are simply part of trying. Give yourself the space to learn and try again.',
+    accentBg: 'bg-[#FFF9F2]',
+    accentBorder: 'border-[#FFE3C7]',
+    iconBg: 'bg-[#C26B00]/10',
+    iconColor: 'text-[#C26B00]',
+    icon: RotateCcw,
+  },
+  {
+    id: 'rem_6',
+    title: 'True Friends',
+    text: 'The best friendships let you be completely yourself, on quiet days and busy days alike.',
+    accentBg: 'bg-[#FEF6F7]',
+    accentBorder: 'border-[#FCD3D9]',
+    iconBg: 'bg-[#D93856]/10',
+    iconColor: 'text-[#D93856]',
+    icon: Heart,
+  },
+  {
+    id: 'rem_7',
+    title: 'Trust Yourself',
+    text: "Give yourself credit for how far you've come. You are capable of more than you realize.",
+    accentBg: 'bg-[#F2F8FD]',
+    accentBorder: 'border-[#CCE3FC]',
+    iconBg: 'bg-[#0866C6]/10',
+    iconColor: 'text-[#0866C6]',
+    icon: Smile,
+  },
+];
+
+export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNavigate }) => {
   const [student, setStudent] = useState<LocalStudentAccount | null>(() => getCurrentStudent());
-  const [activeTab, setActiveTab] = useState<'overview' | 'planner' | 'profile'>(initialTab);
-  const [session, setSession] = useState<QuestionnaireSession | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  // Planner state
-  const [tasks, setTasks] = useState<StudentTask[]>(() => {
-    if (!student) return [];
-    try {
-      const raw = localStorage.getItem(`derote_student_tasks_${student.id}`);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Task form modal
-  const [showTaskModal, setShowTaskModal] = useState(false);
-  const [taskTitle, setTaskTitle] = useState('');
-  const [taskCategory, setTaskCategory] = useState('Schoolwork');
-  const [taskPriority, setTaskPriority] = useState<'low' | 'medium' | 'high'>('medium');
-  const [taskDueDate, setTaskDueDate] = useState('Tomorrow');
-  const [taskNotes, setTaskNotes] = useState('');
-
-  // Modals
-  const [showRetakeModal, setShowRetakeModal] = useState(false);
-  const [showSignoutModal, setShowSignoutModal] = useState(false);
-
-  // Email upgrade modal
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [newEmail, setNewEmail] = useState('');
-  const [upgradePassword, setUpgradePassword] = useState('');
-  const [upgradeLoading, setUpgradeLoading] = useState(false);
-  const [upgradeMessage, setUpgradeMessage] = useState<{
-    type: 'success' | 'error';
-    text: string;
+  const [isCompleted, setIsCompleted] = useState<boolean>(false);
+  const [submissionData, setSubmissionData] = useState<SubmissionData | null>(null);
+  const [allAnswers, setAllAnswers] = useState<StudentAnswers>({});
+  const [progressData, setProgressData] = useState<{
+    hasDraft: boolean;
+    currentSection: number;
+    totalSections: number;
+    answeredCount: number;
+    totalQuestions: number;
+    progressPercent: number;
+    sectionTitle: string;
   } | null>(null);
 
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [showSignoutModal, setShowSignoutModal] = useState<boolean>(false);
+  const [showRetakeModal, setShowRetakeModal] = useState<boolean>(false);
+
+  // "View My Answers" modal state
+  const [showAnswersModal, setShowAnswersModal] = useState<boolean>(false);
+  const [activeAnswersSection, setActiveAnswersSection] = useState<number>(1);
+
+  // Load and sync student status
   useEffect(() => {
     const unsub = onLocalAuthChange((curr) => {
       if (curr) {
         setStudent(curr);
       } else {
-        // If no explicit student session, check if student filled About Me Part 1
+        // Fallback: check if student filled About Me Part 1 in draft/submission
         try {
           const subRaw = localStorage.getItem('derote_student_questionnaire_submission');
           const draftRaw = localStorage.getItem('derote_student_questionnaire_draft');
@@ -120,93 +182,95 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
     return () => unsub();
   }, []);
 
-  useEffect(() => {
-    if (student) {
-      setIsLoading(true);
-      loadStudentQuestionnaireSession(student)
-        .then(({ session: loadedSession }) => {
-          setSession(loadedSession);
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
+  const refreshData = async () => {
+    setIsLoading(true);
+    try {
+      const submitted = await hasSubmitted();
+      const currentAcc = getCurrentStudent();
+      const draft = await loadDraft();
+      const sub = await getSubmissionData();
 
-      // Load tasks
-      try {
-        const raw = localStorage.getItem(`derote_student_tasks_${student.id}`);
-        if (raw) {
-          setTasks(JSON.parse(raw));
-        } else {
-          // Default initial tasks
-          const defaultTasks: StudentTask[] = [
-            {
-              id: 'task_1',
-              title: 'Review my DeRote reflection summary',
-              category: 'Self-Reflection',
-              priority: 'high',
-              dueDate: 'Today',
-              completed: false,
-            },
-            {
-              id: 'task_2',
-              title: 'Explore one hobby or interest outside schoolwork',
-              category: 'Personal Interests',
-              priority: 'medium',
-              dueDate: 'This weekend',
-              completed: false,
-            },
-          ];
-          setTasks(defaultTasks);
-          localStorage.setItem(`derote_student_tasks_${student.id}`, JSON.stringify(defaultTasks));
+      // Collect best available answers
+      let gatheredAnswers: StudentAnswers = {};
+      if (sub?.answers && Object.keys(sub.answers).length > 0) {
+        gatheredAnswers = { ...sub.answers };
+      } else if (draft?.answers && Object.keys(draft.answers).length > 0) {
+        gatheredAnswers = { ...draft.answers };
+      }
+
+      if (submitted || (currentAcc && currentAcc.completedReflections > 0)) {
+        setIsCompleted(true);
+        const resolvedSub =
+          sub ||
+          (await getOrSeedStudentSubmission(
+            currentAcc?.fullName,
+            currentAcc?.classGrade,
+            currentAcc?.schoolName,
+            currentAcc?.age
+          ));
+        setSubmissionData(resolvedSub);
+        if (resolvedSub?.answers) {
+          gatheredAnswers = { ...resolvedSub.answers, ...gatheredAnswers };
         }
-      } catch {}
-    } else {
+
+        // If student account is missing, create from Part 1 answers
+        if (!currentAcc && gatheredAnswers && (gatheredAnswers[1] || gatheredAnswers[4])) {
+          const synced = syncStudentProfileFromPart1(gatheredAnswers);
+          setStudent(synced);
+        }
+      } else {
+        setIsCompleted(false);
+        const progress = await getQuestionnaireProgress();
+        setProgressData(progress);
+
+        if (!currentAcc && progress.answers && (progress.answers[1] || progress.answers[4])) {
+          const synced = syncStudentProfileFromPart1(progress.answers);
+          setStudent(synced);
+        }
+
+        if (progress.answers) {
+          gatheredAnswers = { ...progress.answers, ...gatheredAnswers };
+        }
+      }
+
+      // If answers are still sparse for testing/demo, seed them
+      if (Object.keys(gatheredAnswers).length === 0) {
+        const seeded = await getOrSeedStudentSubmission(
+          currentAcc?.fullName,
+          currentAcc?.classGrade,
+          currentAcc?.schoolName,
+          currentAcc?.age
+        );
+        if (seeded?.answers) {
+          gatheredAnswers = seeded.answers;
+        }
+      }
+
+      setAllAnswers(gatheredAnswers);
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err);
+    } finally {
       setIsLoading(false);
     }
-  }, [student]);
-
-  const saveTasks = (newTasks: StudentTask[]) => {
-    setTasks(newTasks);
-    if (student) {
-      try {
-        localStorage.setItem(`derote_student_tasks_${student.id}`, JSON.stringify(newTasks));
-      } catch {}
-    }
   };
 
-  const handleToggleTask = (taskId: string) => {
-    const updated = tasks.map((t) => (t.id === taskId ? { ...t, completed: !t.completed } : t));
-    saveTasks(updated);
+  useEffect(() => {
+    refreshData();
+  }, [student?.id, student?.age, student?.classGrade]);
+
+  const handleContinueQuestionnaire = () => {
+    onNavigate('/questionnaire');
   };
 
-  const handleDeleteTask = (taskId: string) => {
-    const updated = tasks.filter((t) => t.id !== taskId);
-    saveTasks(updated);
-  };
-
-  const handleCreateTask = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!taskTitle.trim()) return;
-
-    const newTask: StudentTask = {
-      id: `task_${Date.now()}`,
-      title: taskTitle.trim(),
-      category: taskCategory,
-      priority: taskPriority,
-      dueDate: taskDueDate.trim() || 'Upcoming',
-      notes: taskNotes.trim() || undefined,
-      completed: false,
-    };
-
-    saveTasks([newTask, ...tasks]);
-    setTaskTitle('');
-    setTaskNotes('');
-    setShowTaskModal(false);
+  const handleOpenAnswersModal = (initialSection = 1) => {
+    setActiveAnswersSection(initialSection);
+    setShowAnswersModal(true);
   };
 
   const handleRetakeConfirm = async () => {
-    if (!student) return;
-    await resetStudentQuestionnaireSession(student);
+    if (student) {
+      await resetStudentQuestionnaireSession(student);
+    }
     await resetSubmission();
     setShowRetakeModal(false);
     onNavigate('/questionnaire');
@@ -218,715 +282,635 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
     onNavigate('/login');
   };
 
-  const handleUpgradeEmail = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newEmail.trim()) return;
-    setUpgradeLoading(true);
-    setUpgradeMessage(null);
-
+  const formattedSubmittedDate = useMemo(() => {
+    if (!submissionData?.submittedAt) return 'Recently';
     try {
-      const res = await upgradeStudentEmail(newEmail.trim(), upgradePassword || undefined);
-      if (res.success) {
-        setUpgradeMessage({
-          type: 'success',
-          text: res.message || 'Login email successfully updated!',
-        });
-        setTimeout(() => {
-          setShowUpgradeModal(false);
-          setUpgradeMessage(null);
-        }, 1500);
-      } else {
-        setUpgradeMessage({ type: 'error', text: res.error || 'Failed to update email.' });
-      }
+      const d = new Date(submissionData.submittedAt);
+      return d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
     } catch {
-      setUpgradeMessage({ type: 'error', text: 'Network error occurred.' });
-    } finally {
-      setUpgradeLoading(false);
+      return 'Recently';
     }
-  };
+  }, [submissionData?.submittedAt]);
 
-  // Generate insight report if answers are available
-  const insightReport: StudentInsightReport | null = useMemo(() => {
-    if (!session || !session.answers) return null;
-    return generateStudentInsightReport(
-      session,
-      student?.fullName || 'Student',
-      student?.classGrade || '9'
-    );
-  }, [session, student]);
-
-  if (!student) {
+  if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#F4F8FD] flex flex-col justify-between text-[#102C46]">
-        <header className="bg-white border-b border-[#E8F3FF] px-4 sm:px-8 py-3.5 sticky top-0 z-20">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <button
-              onClick={() => onNavigate('/')}
-              className="flex items-center text-left focus-visible:outline-2 focus-visible:outline-[#0866C6] rounded-lg cursor-pointer"
-            >
-              <DeRoteWordmark showDescriptor={true} size="md" />
-            </button>
-            <button
-              onClick={() => onNavigate('/login')}
-              className="text-xs sm:text-sm font-bold text-[#0866C6] hover:underline"
-            >
-              Sign In
-            </button>
-          </div>
-        </header>
-
-        <main className="flex-1 flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-[#E8F3FF] shadow-xl text-center">
-            <div className="w-14 h-14 rounded-2xl bg-[#EBF4FE] text-[#0866C6] flex items-center justify-center mx-auto mb-4">
-              <User className="w-7 h-7" />
-            </div>
-            <h1 className="text-2xl font-extrabold text-[#062B50] mb-2">Student Portal Access</h1>
-            <p className="text-sm text-[#5A6E85] mb-6 leading-relaxed">
-              Please sign in to access your personalized student reflections, study planner, and learning insights.
-            </p>
-            <div className="space-y-3">
-              <button
-                onClick={() => onNavigate('/login')}
-                className="w-full py-3.5 px-4 rounded-xl bg-[#0866C6] text-white font-bold text-sm hover:bg-[#062B50] transition-colors shadow-md shadow-[#0866C6]/20 cursor-pointer"
-              >
-                Sign In to Student Account
-              </button>
-              <button
-                onClick={() => onNavigate('/signup')}
-                className="w-full py-3 px-4 rounded-xl bg-white text-[#062B50] border border-[#E2EDF8] font-semibold text-sm hover:bg-[#F4F8FD] transition-colors cursor-pointer"
-              >
-                Create New Student Account
-              </button>
-            </div>
-          </div>
-        </main>
+      <div className="min-h-screen bg-gradient-to-b from-[#F2F7FC]/80 via-white to-[#F4F8FD] flex flex-col items-center justify-center p-6 text-[#102C46]">
+        <div className="w-12 h-12 rounded-2xl bg-[#EBF4FE] border border-[#E2EDF8] flex items-center justify-center mb-4">
+          <Loader2 className="w-6 h-6 text-[#0866C6] animate-spin" />
+        </div>
+        <p className="text-[#062B50] text-base font-bold">Loading your dashboard...</p>
+        <p className="text-xs text-[#5A6E85] mt-1">Preparing your reflection space</p>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-[#F4F8FD] flex flex-col text-[#102C46]">
-      {/* Top Navigation */}
-      <header className="bg-white border-b border-[#E8F3FF] px-4 sm:px-8 py-3.5 sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
-          <button
-            onClick={() => onNavigate('/')}
-            className="flex items-center text-left focus-visible:outline-2 focus-visible:outline-[#0866C6] rounded-lg cursor-pointer"
-          >
-            <DeRoteWordmark showDescriptor={true} size="md" />
-          </button>
+  const studentDisplayName = student?.fullName || 'Student';
+  const studentSchool = student?.schoolName || 'Enrolled School';
+  const studentClass = student?.classGrade ? `Class ${student.classGrade}` : 'Class 10';
+  const studentAge = student?.age || '15';
 
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="text-right hidden sm:block">
-              <div className="text-xs font-bold text-[#062B50]">{student.fullName}</div>
-              <div className="text-[11px] text-[#64778C]">
-                {student.classGrade === 'Others' ? 'Others' : `Class ${student.classGrade}`}
-                {student.age ? ` · Age ${student.age}` : ''} · {student.schoolName}
-              </div>
-            </div>
+  return (
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#F2F7FC]/80 via-white to-[#F4F8FD] text-[#102C46]">
+      {/* Top Header Bar (No duplicate Edit Profile button here) */}
+      <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-[#E8F3FF] transition-colors">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => onNavigate('/')}
+              className="flex items-center text-left focus-visible:outline-2 focus-visible:outline-[#0866C6] rounded-lg cursor-pointer"
+              aria-label="DeRote Student Insight - Home"
+            >
+              <DeRoteWordmark showDescriptor={false} size="sm" />
+            </button>
+            <span className="hidden sm:inline-block w-px h-4 bg-[#D5E4F3]" />
+            <span className="hidden sm:inline-block text-xs font-bold text-[#5A6E85] tracking-wide uppercase">
+              Student Dashboard
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Demo Retake option for testing */}
+            <button
+              type="button"
+              onClick={() => setShowRetakeModal(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E2EDF8] bg-white hover:bg-[#F2F7FC] text-xs font-semibold text-[#5A6E85] hover:text-[#0866C6] transition-colors cursor-pointer"
+              title="Demo Retake (for testing)"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#5A6E85]" />
+              <span className="hidden md:inline">Demo Retake</span>
+            </button>
 
             <button
               type="button"
               onClick={() => setShowSignoutModal(true)}
-              className="p-2 sm:px-3 sm:py-1.5 rounded-xl border border-[#D5E4F3] text-xs font-bold text-[#64778C] hover:text-red-600 hover:border-red-200 transition-colors cursor-pointer flex items-center gap-1.5"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-transparent hover:border-[#E2EDF8] text-xs font-semibold text-[#5A6E85] hover:text-red-600 transition-colors cursor-pointer"
               title="Sign Out"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
-        {/* Welcome Header */}
-        <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#EBF4FE] text-[#0866C6] text-xs font-bold mb-2">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Personal Student Dashboard</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight">
-              Hello, {student.fullName}
-            </h1>
-            <p className="text-xs sm:text-sm text-[#5A6E85] mt-1">
-              Your safe space to reflect on school, interests, and what matters to you.
-            </p>
-          </div>
+      {/* Main Container */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-8">
+        {/* ========================================================= */}
+        {/* CASE 1: STUDENT HAS NOT COMPLETED THE QUESTIONNAIRE        */}
+        {/* ========================================================= */}
+        {!isCompleted && (
+          <section className="space-y-6">
+            {/* Incomplete Welcome Hero Card */}
+            <div className="bg-white rounded-3xl border border-[#CCE3FC] p-6 sm:p-8 shadow-sm relative overflow-hidden">
+              <div className="absolute top-0 right-0 -mr-16 -mt-16 w-56 h-56 rounded-full bg-gradient-to-br from-[#E8F3FF] to-transparent pointer-events-none" />
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onNavigate('/questionnaire')}
-              className="px-5 py-2.5 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs sm:text-sm font-bold transition-all shadow-md shadow-[#0866C6]/20 flex items-center gap-2 cursor-pointer"
-            >
-              <span>{session?.status === 'submitted' ? 'Review Reflection' : 'Continue Reflection'}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Dashboard Tabs */}
-        <div className="flex border-b border-[#E8F3FF] mb-8 space-x-6">
-          <button
-            type="button"
-            onClick={() => setActiveTab('overview')}
-            className={`pb-3 text-sm font-bold border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'overview'
-                ? 'border-[#0866C6] text-[#0866C6]'
-                : 'border-transparent text-[#64778C] hover:text-[#062B50]'
-            }`}
-          >
-            Insights &amp; Reflection
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('planner')}
-            className={`pb-3 text-sm font-bold border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'planner'
-                ? 'border-[#0866C6] text-[#0866C6]'
-                : 'border-transparent text-[#64778C] hover:text-[#062B50]'
-            }`}
-          >
-            My Study &amp; Goals Planner ({tasks.filter((t) => !t.completed).length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('profile')}
-            className={`pb-3 text-sm font-bold border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'profile'
-                ? 'border-[#0866C6] text-[#0866C6]'
-                : 'border-transparent text-[#64778C] hover:text-[#062B50]'
-            }`}
-          >
-            Profile &amp; Account
-          </button>
-        </div>
-
-        {/* TAB 1: OVERVIEW */}
-        {activeTab === 'overview' && (
-          <div className="space-y-8">
-            {/* Assessment Status Card */}
-            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E8F3FF] shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-              <div className="flex items-start gap-4">
-                <div
-                  className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
-                    session?.status === 'submitted'
-                      ? 'bg-emerald-50 text-emerald-600'
-                      : 'bg-[#EBF4FE] text-[#0866C6]'
-                  }`}
-                >
-                  {session?.status === 'submitted' ? (
-                    <CheckCircle2 className="w-6 h-6" />
-                  ) : (
-                    <Clock className="w-6 h-6" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-[#062B50]">
-                    {session?.status === 'submitted'
-                      ? 'Self-Reflection Completed'
-                      : 'Self-Reflection in Progress'}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-[#5A6E85] mt-1 leading-relaxed max-w-xl">
-                    {session?.status === 'submitted'
-                      ? 'Your answers are safely logged. You can review your personal narrative below or retake the assessment anytime.'
-                      : 'You can pause and come back anytime. Your draft is automatically saved as you answer.'}
+              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="space-y-2 max-w-2xl">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EBF4FE] text-[#0866C6] text-xs font-bold tracking-wide uppercase">
+                    <Clock className="w-3.5 h-3.5 text-[#0866C6]" />
+                    <span>Questionnaire In Progress</span>
+                  </div>
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight">
+                    Welcome back, {studentDisplayName}!
+                  </h1>
+                  <p className="text-sm sm:text-base text-[#5A6E85] leading-relaxed">
+                    You have an ongoing self-reflection session. All your answers are saved, and you can resume right where you paused.
                   </p>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/questionnaire')}
-                  className="px-5 py-2.5 rounded-xl bg-[#0866C6] text-white text-xs sm:text-sm font-bold hover:bg-[#062B50] transition-colors cursor-pointer"
-                >
-                  {session?.status === 'submitted' ? 'Review Answers' : 'Continue Questionnaire'}
-                </button>
-                {session?.status === 'submitted' && (
+                {/* Continue Questionnaire Action */}
+                <div className="shrink-0 flex flex-col sm:flex-row md:flex-col gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowRetakeModal(true)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-[#0866C6]/30 text-xs sm:text-sm font-bold text-[#0866C6] hover:bg-[#EBF4FE] transition-colors cursor-pointer"
-                    title="Retake reflection"
+                    onClick={handleContinueQuestionnaire}
+                    className="min-h-[48px] px-8 py-3 rounded-2xl bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-sm sm:text-base transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] cursor-pointer inline-flex items-center justify-center gap-2"
                   >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>Retake Questionnaire</span>
+                    <span>Continue Questionnaire</span>
+                    <ArrowRight className="w-4 h-4" />
                   </button>
-                )}
+                  <p className="text-[11px] text-[#8EA3B8] text-center md:text-right">
+                    Takes you to the exact question you left off
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {/* Generated Insight Cards */}
-            {insightReport ? (
-              <div className="space-y-6">
-                <div>
-                  <h2 className="text-xl font-bold text-[#062B50] tracking-tight">
-                    Your Personalized Reflection Narrative
-                  </h2>
-                  <p className="text-xs text-[#64778C] mt-1">
-                    Synthesized from your responses. Not a diagnosis or score—a mirror for your thoughts.
+              {/* Progress Summary Box */}
+              <div className="mt-6 pt-6 border-t border-[#E8F3FF] grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8]">
+                  <p className="text-xs font-bold text-[#5A6E85] uppercase tracking-wider">
+                    Questions Completed
+                  </p>
+                  <p className="text-xl sm:text-2xl font-extrabold text-[#062B50] mt-1">
+                    {progressData?.answeredCount || 0}{' '}
+                    <span className="text-xs font-medium text-[#8EA3B8]">
+                      of {progressData?.totalQuestions || 64}
+                    </span>
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {insightReport.cards.map((card, i) => (
-                    <div
-                      key={i}
-                      className="bg-white rounded-3xl p-6 border border-[#E8F3FF] shadow-xs flex flex-col justify-between"
-                    >
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#0866C6] bg-[#E8F3FF] px-2.5 py-0.5 rounded-full mb-3 inline-block">
-                          Category {card.categoryKey}
-                        </span>
-                        <h3 className="text-base font-bold text-[#062B50] mb-2">{card.heading}</h3>
-                        <p className="text-xs sm:text-sm text-[#5A6E85] leading-relaxed">
-                          {card.reflectionText}
-                        </p>
-                      </div>
+                <div className="p-4 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8]">
+                  <p className="text-xs font-bold text-[#5A6E85] uppercase tracking-wider">
+                    Current Section
+                  </p>
+                  <p className="text-base sm:text-lg font-bold text-[#062B50] mt-1 truncate">
+                    Section {progressData?.currentSection || 1}
+                  </p>
+                  <p className="text-xs text-[#5A6E85] truncate">
+                    {progressData?.sectionTitle || 'About Me (Part 1)'}
+                  </p>
+                </div>
 
-                      <div className="mt-4 pt-3 border-t border-[#E8F3FF] text-[11px] text-[#64778C]">
-                        {card.evidence.length > 0
-                          ? `Traceable to Question ${card.evidence.map((e) => e.questionNumber).join(', ')}`
-                          : 'Derived from your stated reflections'}
-                      </div>
+                <div className="p-4 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between text-xs font-bold text-[#5A6E85]">
+                      <span>OVERALL PROGRESS</span>
+                      <span className="text-[#0866C6]">{progressData?.progressPercent || 0}%</span>
                     </div>
-                  ))}
+                    <div className="w-full bg-[#E2EDF8] rounded-full h-2 mt-2 overflow-hidden">
+                      <div
+                        className="bg-[#0866C6] h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${progressData?.progressPercent || 5}%` }}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-[#8EA3B8] mt-2">
+                    Leave any time and your progress stays safe
+                  </p>
                 </div>
               </div>
-            ) : (
-              <div className="bg-white rounded-3xl p-8 border border-[#E8F3FF] text-center">
-                <BookOpen className="w-10 h-10 text-[#0866C6] mx-auto mb-3 opacity-60" />
-                <h3 className="text-lg font-bold text-[#062B50] mb-1">Begin your reflection</h3>
-                <p className="text-xs sm:text-sm text-[#5A6E85] max-w-md mx-auto mb-5 leading-relaxed">
-                  Answer 14 gentle questions to uncover your unique patterns of curiosity, working with others, and personal agency.
-                </p>
+            </div>
+
+            {/* Profile Card with the ONE Edit Profile button */}
+            <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E2EDF8] shadow-sm">
+              <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#EAF2FC]">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-[#EBF4FE] text-[#0866C6] flex items-center justify-center">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-[#062B50]">
+                    Student Profile
+                  </span>
+                </div>
+
+                {/* THE ONLY EDIT PROFILE BUTTON */}
                 <button
                   type="button"
-                  onClick={() => onNavigate('/questionnaire')}
-                  className="px-6 py-3 rounded-2xl bg-[#0866C6] text-white font-bold text-xs sm:text-sm hover:bg-[#062B50] transition-colors shadow-sm"
+                  onClick={() => onNavigate('/profile/edit')}
+                  className="px-3.5 py-1.5 rounded-xl border border-[#CCE3FC] bg-[#EBF4FE] hover:bg-[#0866C6] text-[#0866C6] hover:text-white text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
                 >
-                  Start 14-Question Reflection
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit Profile</span>
                 </button>
               </div>
-            )}
-          </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
+                    <User className="w-3 h-3 text-[#0866C6]" />
+                    <span>Name</span>
+                  </span>
+                  <p className="text-sm sm:text-base font-bold text-[#062B50] truncate">
+                    {studentDisplayName}
+                  </p>
+                  <span className="inline-block text-[10px] text-[#8EA3B8]">Verified &amp; Fixed</span>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-[#0866C6]" />
+                    <span>Age</span>
+                  </span>
+                  <p className="text-sm sm:text-base font-bold text-[#062B50]">
+                    {studentAge} years old
+                  </p>
+                  <span className="inline-block text-[10px] text-[#0866C6]">Editable</span>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
+                    <BookOpen className="w-3 h-3 text-[#0866C6]" />
+                    <span>Class</span>
+                  </span>
+                  <p className="text-sm sm:text-base font-bold text-[#062B50]">
+                    {studentClass}
+                  </p>
+                  <span className="inline-block text-[10px] text-[#0866C6]">Editable</span>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
+                    <School className="w-3 h-3 text-[#0866C6]" />
+                    <span>School / Institution</span>
+                  </span>
+                  <p className="text-sm sm:text-base font-bold text-[#062B50] truncate" title={studentSchool}>
+                    {studentSchool}
+                  </p>
+                  <span className="inline-block text-[10px] text-[#8EA3B8]">Verified &amp; Fixed</span>
+                </div>
+              </div>
+            </div>
+          </section>
         )}
 
-        {/* TAB 2: PLANNER */}
-        {activeTab === 'planner' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-[#062B50] tracking-tight">
-                  Personal Study &amp; Goals Planner
-                </h2>
-                <p className="text-xs text-[#64778C] mt-1">
-                  Keep track of homework, self-study goals, and personal projects.
-                </p>
-              </div>
+        {/* ========================================================= */}
+        {/* CASE 2: STUDENT HAS COMPLETED THE QUESTIONNAIRE           */}
+        {/* ========================================================= */}
+        {isCompleted && (
+          <section className="space-y-8">
+            {/* Completion Hero Banner */}
+            <div className="bg-white rounded-3xl border border-[#CCE3FC] p-6 sm:p-8 shadow-sm relative overflow-hidden">
+              <div className="absolute top-0 right-0 -mr-12 -mt-12 w-64 h-64 rounded-full bg-gradient-to-br from-[#E8F3FF] via-[#F0F7FF] to-transparent pointer-events-none" />
 
-              <button
-                type="button"
-                onClick={() => setShowTaskModal(true)}
-                className="px-4 py-2.5 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs sm:text-sm font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Goal</span>
-              </button>
-            </div>
-
-            {/* Task List */}
-            <div className="bg-white rounded-3xl border border-[#E8F3FF] shadow-xs divide-y divide-[#E8F3FF] overflow-hidden">
-              {tasks.length === 0 ? (
-                <div className="p-8 text-center text-xs sm:text-sm text-[#64778C]">
-                  No goals yet. Click <strong>Add Goal</strong> above to start organizing your study plans.
-                </div>
-              ) : (
-                tasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="p-4 sm:p-5 flex items-center justify-between gap-4 hover:bg-[#F8FAFD] transition-colors"
-                  >
-                    <div className="flex items-start gap-3.5 min-w-0">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleTask(task.id)}
-                        className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 mt-0.5 cursor-pointer transition-colors ${
-                          task.completed
-                            ? 'bg-emerald-600 border-emerald-600 text-white'
-                            : 'bg-white border-[#CBD5E1] hover:border-[#0866C6]'
-                        }`}
-                      >
-                        {task.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                      </button>
-
-                      <div className="min-w-0">
-                        <div
-                          className={`text-sm font-bold text-[#062B50] truncate ${
-                            task.completed ? 'line-through opacity-50' : ''
-                          }`}
-                        >
-                          {task.title}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-[#64778C] mt-0.5">
-                          <span className="text-[#0866C6] font-semibold">{task.category}</span>
-                          <span>·</span>
-                          <span>Due: {task.dueDate}</span>
-                          {task.notes && (
-                            <>
-                              <span>·</span>
-                              <span className="truncate max-w-[200px]">{task.notes}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
+              <div className="relative z-10 space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1.5">
+                    {/* Clear Assessment Completed Status */}
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Assessment Completed</span>
+                      <span className="text-emerald-400">•</span>
+                      <span className="font-medium">{formattedSubmittedDate}</span>
                     </div>
 
+                    <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight pt-1">
+                      Welcome, {studentDisplayName}!
+                    </h1>
+                    <p className="text-xs sm:text-sm text-[#5A6E85] leading-relaxed max-w-xl">
+                      Your self-reflection assessment is successfully submitted. You can read through all your submitted answers below.
+                    </p>
+                  </div>
+
+                  {/* Primary Action Button: View My Answers */}
+                  <div className="flex items-center gap-2.5 shrink-0">
                     <button
                       type="button"
-                      onClick={() => handleDeleteTask(task.id)}
-                      className="p-2 text-[#64778C] hover:text-red-600 transition-colors cursor-pointer shrink-0"
-                      title="Delete task"
+                      onClick={() => handleOpenAnswersModal(1)}
+                      className="min-h-[46px] px-6 py-2.5 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs sm:text-sm font-bold transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] cursor-pointer inline-flex items-center gap-2"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Eye className="w-4 h-4" />
+                      <span>View My Answers</span>
                     </button>
                   </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: PROFILE */}
-        {activeTab === 'profile' && (
-          <div className="max-w-2xl bg-white rounded-3xl p-6 sm:p-8 border border-[#E8F3FF] shadow-xs space-y-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-[#062B50] tracking-tight">Student Profile Details</h2>
-                <p className="text-xs text-[#5A6E85] mt-0.5">
-                  Created strictly using your About Me (Part 1) personal information.
-                </p>
-              </div>
-              <span className="text-xs font-bold px-3 py-1 bg-[#EBF4FE] text-[#0866C6] rounded-full border border-[#0866C6]/20">
-                About Me Part 1
-              </span>
-            </div>
-
-            <div className="space-y-4 text-sm">
-              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                <div className="flex items-center gap-3">
-                  <User className="w-4 h-4 text-[#0866C6]" />
-                  <span className="text-[#64778C]">Full Name</span>
                 </div>
-                <span className="font-bold text-[#062B50]">{student.fullName}</span>
-              </div>
 
-              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                <div className="flex items-center gap-3">
-                  <Calendar className="w-4 h-4 text-[#0866C6]" />
-                  <span className="text-[#64778C]">Age</span>
-                </div>
-                <span className="font-bold text-[#062B50]">
-                  {student.age ? `${student.age} years old` : 'Not specified'}
-                </span>
-              </div>
+                {/* Profile Information Card with THE ONLY Edit Profile button */}
+                <div className="p-5 sm:p-6 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8]">
+                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#EAF2FC]">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-[#EBF4FE] text-[#0866C6] flex items-center justify-center">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-extrabold uppercase tracking-wider text-[#062B50]">
+                        Student Profile Details
+                      </span>
+                    </div>
 
-              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                <div className="flex items-center gap-3">
-                  <BookOpen className="w-4 h-4 text-[#0866C6]" />
-                  <span className="text-[#64778C]">Class</span>
-                </div>
-                <span className="font-bold text-[#062B50]">
-                  {student.classGrade === 'Others' ? 'Others' : `Class ${student.classGrade}`}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                <div className="flex items-center gap-3">
-                  <School className="w-4 h-4 text-[#0866C6]" />
-                  <span className="text-[#64778C]">School and Institute</span>
-                </div>
-                <span className="font-bold text-[#062B50] text-right truncate max-w-xs">
-                  {student.schoolName}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                <div className="flex items-center gap-3">
-                  <Mail className="w-4 h-4 text-[#0866C6]" />
-                  <span className="text-[#64778C]">Login Email</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-[#062B50]">{student.email || 'None'}</span>
-                  {student.isSyntheticEmail && (
+                    {/* THE ONLY EDIT PROFILE BUTTON */}
                     <button
                       type="button"
-                      onClick={() => setShowUpgradeModal(true)}
-                      className="text-xs font-bold text-[#0866C6] hover:underline cursor-pointer"
+                      onClick={() => onNavigate('/profile/edit')}
+                      className="px-3.5 py-1.5 rounded-xl border border-[#CCE3FC] bg-[#EBF4FE] hover:bg-[#0866C6] text-[#0866C6] hover:text-white text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
                     >
-                      (Set Real Email)
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit Profile</span>
                     </button>
-                  )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Name */}
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
+                        <User className="w-3 h-3 text-[#0866C6]" />
+                        <span>Student Name</span>
+                      </span>
+                      <p className="text-sm sm:text-base font-bold text-[#062B50] truncate">
+                        {studentDisplayName}
+                      </p>
+                      <span className="inline-block text-[10px] text-[#8EA3B8]">Verified &amp; Fixed</span>
+                    </div>
+
+                    {/* Age */}
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-[#0866C6]" />
+                        <span>Age</span>
+                      </span>
+                      <p className="text-sm sm:text-base font-bold text-[#062B50]">
+                        {studentAge} years old
+                      </p>
+                      <span className="inline-block text-[10px] text-[#0866C6]">Editable in Profile</span>
+                    </div>
+
+                    {/* Class */}
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
+                        <BookOpen className="w-3 h-3 text-[#0866C6]" />
+                        <span>Class / Grade</span>
+                      </span>
+                      <p className="text-sm sm:text-base font-bold text-[#062B50]">
+                        {studentClass}
+                      </p>
+                      <span className="inline-block text-[10px] text-[#0866C6]">Editable in Profile</span>
+                    </div>
+
+                    {/* School / Institution */}
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
+                        <School className="w-3 h-3 text-[#0866C6]" />
+                        <span>School / Institution</span>
+                      </span>
+                      <p className="text-sm sm:text-base font-bold text-[#062B50] truncate" title={studentSchool}>
+                        {studentSchool}
+                      </p>
+                      <span className="inline-block text-[10px] text-[#8EA3B8]">Verified &amp; Fixed</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              {student.phone && (
-                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                  <div className="flex items-center gap-3">
-                    <Phone className="w-4 h-4 text-[#0866C6]" />
-                    <span className="text-[#64778C]">Registered Mobile</span>
-                  </div>
-                  <span className="font-bold text-[#062B50]">+91 {student.phone}</span>
-                </div>
-              )}
             </div>
-
-            <div className="pt-4 border-t border-[#E8F3FF] flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setShowSignoutModal(true)}
-                className="px-4 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold transition-colors cursor-pointer"
-              >
-                Sign Out
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowUpgradeModal(true)}
-                className="px-4 py-2 rounded-xl bg-white border border-[#D5E4F3] text-xs font-bold text-[#062B50] hover:bg-[#F2F7FC] cursor-pointer"
-              >
-                Update Login Email
-              </button>
-            </div>
-          </div>
+          </section>
         )}
+
+        {/* ========================================================= */}
+        {/* SHORT, WARM REMINDERS (NO FILTERS, NO OVEREXPLAINING)      */}
+        {/* ========================================================= */}
+        <section className="bg-white rounded-3xl border border-[#CCE3FC] p-6 sm:p-8 shadow-sm space-y-6">
+          <div className="border-b border-[#E8F3FF] pb-4">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-[#062B50]">
+              Reminders for You
+            </h2>
+          </div>
+
+          {/* Cards Grid: Short, warm, small lines */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+            {REMINDERS.map((card) => {
+              const IconComponent = card.icon;
+              return (
+                <div
+                  key={card.id}
+                  className={`p-5 rounded-2xl border ${card.accentBorder} ${card.accentBg} flex flex-col justify-between space-y-3`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-bold text-[#062B50]">
+                      {card.title}
+                    </h3>
+                    <div
+                      className={`w-7 h-7 rounded-lg ${card.iconBg} ${card.iconColor} flex items-center justify-center shrink-0`}
+                    >
+                      <IconComponent className="w-4 h-4" />
+                    </div>
+                  </div>
+
+                  <p className="text-xs sm:text-sm text-[#4A5D73] leading-relaxed">
+                    {card.text}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       </main>
 
-      {/* MODAL: ADD GOAL TASK */}
-      {showTaskModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 bg-[#062B50]/40 backdrop-blur-xs flex items-center justify-center p-4"
-        >
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E8F3FF] shadow-2xl">
-            <h3 className="text-xl font-bold text-[#062B50] mb-4">Add Study or Personal Goal</h3>
-
-            <form onSubmit={handleCreateTask} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">Goal Title</label>
-                <input
-                  type="text"
-                  value={taskTitle}
-                  onChange={(e) => setTaskTitle(e.target.value)}
-                  placeholder="e.g. Science Chapter 4 revision"
-                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none"
-                  required
-                />
+      {/* ========================================================= */}
+      {/* VIEW MY ANSWERS INTERACTIVE MODAL (GUARANTEED TO WORK)    */}
+      {/* ========================================================= */}
+      {showAnswersModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="relative w-full max-w-3xl bg-white rounded-3xl border border-[#CCE3FC] shadow-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-5 sm:px-8 py-5 border-b border-[#E8F3FF] flex items-center justify-between bg-white sticky top-0 z-10">
+              <div className="space-y-0.5">
+                <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0866C6] uppercase tracking-wider">
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Questionnaire Answers</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-extrabold text-[#062B50]">
+                  My Submitted Answers
+                </h3>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">Category</label>
-                <select
-                  value={taskCategory}
-                  onChange={(e) => setTaskCategory(e.target.value)}
-                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none"
-                >
-                  <option value="Schoolwork">Schoolwork</option>
-                  <option value="Self-Reflection">Self-Reflection</option>
-                  <option value="Personal Interests">Personal Interests</option>
-                  <option value="Skill Practice">Skill Practice</option>
-                </select>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowAnswersModal(false)}
+                className="w-9 h-9 rounded-xl border border-[#D5E4F3] text-[#5A6E85] hover:text-[#062B50] hover:bg-[#F2F7FC] flex items-center justify-center transition-colors cursor-pointer"
+                aria-label="Close answers modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">Due Timeframe</label>
-                <input
-                  type="text"
-                  value={taskDueDate}
-                  onChange={(e) => setTaskDueDate(e.target.value)}
-                  placeholder="e.g. Tomorrow, Friday, or Next week"
-                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none"
-                />
-              </div>
+            {/* Section Pills Navigation */}
+            <div className="px-5 sm:px-8 py-3 bg-[#F8FAFD] border-b border-[#E8F3FF] overflow-x-auto flex items-center gap-2 shrink-0">
+              {SECTIONS.map((sec) => {
+                const isSelected = activeAnswersSection === sec.id;
+                return (
+                  <button
+                    key={sec.id}
+                    type="button"
+                    onClick={() => setActiveAnswersSection(sec.id)}
+                    className={`min-h-[36px] px-3.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                      isSelected
+                        ? 'bg-[#0866C6] text-white shadow-xs'
+                        : 'bg-white border border-[#D5E4F3] text-[#5A6E85] hover:bg-[#EBF4FE] hover:text-[#062B50]'
+                    }`}
+                  >
+                    <span>Sec {sec.id}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">
-                  Notes (Optional)
-                </label>
-                <textarea
-                  value={taskNotes}
-                  onChange={(e) => setTaskNotes(e.target.value)}
-                  placeholder="Key concepts or reminders..."
-                  rows={2}
-                  className="w-full text-sm px-3.5 py-2 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none"
-                />
-              </div>
+            {/* Modal Body: Active Section Content */}
+            <div className="flex-1 overflow-y-auto px-5 sm:px-8 py-6 space-y-4">
+              {(() => {
+                const currentSec =
+                  SECTIONS.find((s) => s.id === activeAnswersSection) || SECTIONS[0];
+                const sectionQuestions = QUESTIONS.filter((q) => q.section === currentSec.id);
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E8F3FF]">
-                <button
-                  type="button"
-                  onClick={() => setShowTaskModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-[#64778C] hover:text-[#062B50] cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs font-bold cursor-pointer"
-                >
-                  Save Goal
-                </button>
-              </div>
-            </form>
+                return (
+                  <div className="space-y-4">
+                    {/* Active Section Banner */}
+                    <div className="p-4 rounded-2xl bg-[#EBF4FE] border border-[#CCE3FC] flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-bold uppercase tracking-wider text-[#0866C6]">
+                          Section {currentSec.id} of {SECTIONS.length}
+                        </span>
+                        <h4 className="text-base sm:text-lg font-bold text-[#062B50]">
+                          {currentSec.title}
+                        </h4>
+                      </div>
+                      <span className="text-xs font-semibold text-[#5A6E85]">
+                        {sectionQuestions.length} Questions
+                      </span>
+                    </div>
+
+                    {/* Questions & Answers List */}
+                    <div className="space-y-3.5">
+                      {sectionQuestions.map((q) => {
+                        const ans = allAnswers[q.n];
+                        const hasAnswer =
+                          ans !== undefined &&
+                          ans !== null &&
+                          (typeof ans === 'string'
+                            ? ans.trim().length > 0
+                            : Array.isArray(ans)
+                            ? ans.length > 0
+                            : true);
+
+                        return (
+                          <div
+                            key={q.n}
+                            className="p-4 sm:p-5 rounded-2xl border border-[#E2EDF8] bg-white space-y-3"
+                          >
+                            <div className="flex items-start gap-3">
+                              <span className="w-6 h-6 rounded-lg bg-[#EBF4FE] text-[#0866C6] text-xs font-extrabold flex items-center justify-center shrink-0 mt-0.5">
+                                {q.n}
+                              </span>
+                              <p className="text-xs sm:text-sm font-bold text-[#062B50] leading-snug">
+                                {q.text}
+                              </p>
+                            </div>
+
+                            <div className="pl-9">
+                              {hasAnswer ? (
+                                typeof ans === 'string' ? (
+                                  <div className="p-3 rounded-xl bg-[#F8FAFD] border border-[#E8F3FF] text-xs sm:text-sm text-[#062B50] font-medium leading-relaxed">
+                                    {ans}
+                                  </div>
+                                ) : Array.isArray(ans) ? (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {ans.map((item, idx) => (
+                                      <span
+                                        key={idx}
+                                        className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-[#EBF4FE] text-[#0866C6] font-semibold text-xs border border-[#CCE3FC]"
+                                      >
+                                        <Check className="w-3 h-3 text-[#0866C6]" />
+                                        <span>{item}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null
+                              ) : (
+                                <span className="text-xs italic text-[#8EA3B8]">
+                                  Not answered (optional)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Modal Footer Controls */}
+            <div className="px-5 sm:px-8 py-4 bg-white border-t border-[#E8F3FF] flex items-center justify-between sticky bottom-0 z-10">
+              <button
+                type="button"
+                disabled={activeAnswersSection <= 1}
+                onClick={() => setActiveAnswersSection((prev) => Math.max(1, prev - 1))}
+                className="min-h-[40px] px-4 py-2 rounded-xl border border-[#E2EDF8] text-xs font-bold text-[#062B50] hover:bg-[#F4F8FD] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Previous Section
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowAnswersModal(false)}
+                className="min-h-[40px] px-6 py-2 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs font-bold transition-all cursor-pointer"
+              >
+                Done
+              </button>
+
+              <button
+                type="button"
+                disabled={activeAnswersSection >= SECTIONS.length}
+                onClick={() => setActiveAnswersSection((prev) => Math.min(SECTIONS.length, prev + 1))}
+                className="min-h-[40px] px-4 py-2 rounded-xl border border-[#E2EDF8] text-xs font-bold text-[#062B50] hover:bg-[#F4F8FD] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Next Section
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* MODAL: RETAKE ASSESSMENT */}
+      {/* Demo Retake Modal (Kept for testing) */}
       {showRetakeModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 bg-[#062B50]/40 backdrop-blur-xs flex items-center justify-center p-4"
-        >
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E8F3FF] shadow-2xl">
-            <h3 className="text-xl font-bold text-[#062B50] mb-2">Retake Reflection?</h3>
-            <p className="text-xs sm:text-sm text-[#5A6E85] mb-5 leading-relaxed">
-              This will reset your questionnaire submission and draft so you can take it fresh from Section 1.
-              Your student profile and planner tasks will remain completely safe.
-            </p>
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#E8F3FF]">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-3xl p-6 sm:p-8 border border-[#CCE3FC] shadow-xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-[#EBF4FE] text-[#0866C6] flex items-center justify-center mx-auto">
+              <RotateCcw className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-2">
+              <h3 className="text-xl font-extrabold text-[#062B50]">
+                Retake Questionnaire?
+              </h3>
+              <p className="text-xs sm:text-sm text-[#5A6E85] leading-relaxed">
+                This demo reset allows you to test the questionnaire flow from question 1. In the final release, assessment submissions will be permanently recorded.
+              </p>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row items-center gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setShowRetakeModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-[#64778C] hover:text-[#062B50] cursor-pointer"
+                className="w-full sm:w-1/2 min-h-[44px] px-4 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-bold text-[#062B50] hover:bg-[#F2F7FC] transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleRetakeConfirm}
-                className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                className="w-full sm:w-1/2 min-h-[44px] px-4 py-2.5 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs sm:text-sm font-bold transition-all shadow-md shadow-[#0866C6]/20 cursor-pointer"
               >
-                Confirm Retake
+                Reset &amp; Retake
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL: SIGN OUT */}
+      {/* Sign Out Confirmation Modal */}
       {showSignoutModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 bg-[#062B50]/40 backdrop-blur-xs flex items-center justify-center p-4"
-        >
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E8F3FF] shadow-2xl">
-            <h3 className="text-xl font-bold text-[#062B50] mb-2">Sign Out</h3>
-            <p className="text-xs sm:text-sm text-[#5A6E85] mb-5 leading-relaxed">
-              Are you sure you want to sign out? Your reflection answers and planner tasks are saved and will
-              be restored next time you log in.
-            </p>
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#E8F3FF]">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="max-w-sm w-full bg-white rounded-3xl p-6 sm:p-8 border border-[#CCE3FC] shadow-xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto">
+              <LogOut className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-lg font-extrabold text-[#062B50]">
+                Sign Out of DeRote?
+              </h3>
+              <p className="text-xs sm:text-sm text-[#5A6E85]">
+                Your answers and profile remain safely stored. You can sign in anytime to continue.
+              </p>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row items-center gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setShowSignoutModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-[#64778C] hover:text-[#062B50] cursor-pointer"
+                className="w-full sm:w-1/2 min-h-[44px] px-4 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-bold text-[#062B50] hover:bg-[#F2F7FC] transition-colors cursor-pointer"
               >
-                Stay Signed In
+                Stay Here
               </button>
               <button
                 type="button"
                 onClick={handleSignoutConfirm}
-                className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                className="w-full sm:w-1/2 min-h-[44px] px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold transition-colors cursor-pointer"
               >
                 Sign Out
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: UPGRADE EMAIL */}
-      {showUpgradeModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 bg-[#062B50]/40 backdrop-blur-xs flex items-center justify-center p-4"
-        >
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E8F3FF] shadow-2xl">
-            <h3 className="text-xl font-bold text-[#062B50] mb-2">Update Login Email</h3>
-            <p className="text-xs text-[#5A6E85] mb-4 leading-relaxed">
-              Attach an active email address to your account for easy password reset and sign-in.
-            </p>
-
-            {upgradeMessage && (
-              <div
-                className={`mb-4 p-3 rounded-xl text-xs flex items-start gap-2 ${
-                  upgradeMessage.type === 'error'
-                    ? 'bg-red-50 text-red-700 border border-red-200'
-                    : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                }`}
-              >
-                {upgradeMessage.type === 'error' ? (
-                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                )}
-                <span>{upgradeMessage.text}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleUpgradeEmail} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">New Email Address</label>
-                <input
-                  type="email"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="yourname@gmail.com"
-                  disabled={upgradeLoading}
-                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">
-                  Current Password (if applicable)
-                </label>
-                <input
-                  type="password"
-                  value={upgradePassword}
-                  onChange={(e) => setUpgradePassword(e.target.value)}
-                  placeholder="Enter current password"
-                  disabled={upgradeLoading}
-                  className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E8F3FF]">
-                <button
-                  type="button"
-                  onClick={() => setShowUpgradeModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-[#64778C] hover:text-[#062B50] cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={upgradeLoading}
-                  className="px-5 py-2 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs font-bold cursor-pointer flex items-center gap-1.5"
-                >
-                  {upgradeLoading ? 'Updating...' : 'Update Email'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
