@@ -37,6 +37,8 @@ import {
   onAdminAuthChange,
   AdminAccount,
 } from '../services/adminService';
+import { PrintableReport } from '../components/PrintableReport';
+import { executePrint } from '../utils/printHelper';
 
 interface AdminDashboardPageProps {
   onNavigate: (route: string) => void;
@@ -250,7 +252,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
   }, [selectedStudent, classFilter, statusFilter, searchQuery]);
 
   const handlePrint = () => {
-    window.print();
+    executePrint(reportTitle);
   };
 
   const currentDateFormatted = new Date().toLocaleDateString('en-US', {
@@ -1056,204 +1058,31 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
       )}
 
       {/* ============================================================== */}
-      {/* 5. CONTEXT-AWARE PRINT REPORT (Visible strictly during print)   */}
+      {/* 5. CONTEXT-AWARE PRINT REPORT                                  */}
       {/* ============================================================== */}
-      <div id="derote-admin-print-view" className="hidden print:block w-full bg-white text-black p-4">
-        {/* Printable Header */}
-        <div className="border-b-2 border-black pb-4 mb-6">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="text-xl font-black tracking-tight text-black uppercase">
-                DeRote — Student Insight System
-              </div>
-              <div className="text-xs uppercase tracking-wider text-gray-700 mt-0.5">
-                Official Administrative Record
-              </div>
-            </div>
-            <div className="text-right">
-              <span className="inline-block border border-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-black">
-                CONFIDENTIAL
-              </span>
-              <div className="text-[11px] text-gray-700 mt-1">
-                Date: {currentDateFormatted}
-              </div>
-            </div>
-          </div>
-
-          <h2 className="text-lg font-black uppercase tracking-wide mt-4 text-black">
-            {reportTitle}
-          </h2>
-        </div>
-
-        {/* PRINT VIEW A: INDIVIDUAL STUDENT REPORT */}
-        {selectedStudent ? (
-          <div className="space-y-6">
-            {/* Student Profile Box */}
-            <div className="border border-black p-4 rounded-sm print-page-break-avoid">
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                <div>
-                  <span className="font-bold text-gray-700 block uppercase text-[10px]">
-                    Student Name
-                  </span>
-                  <span className="font-black text-sm text-black">{selectedStudent.fullName}</span>
-                </div>
-                <div>
-                  <span className="font-bold text-gray-700 block uppercase text-[10px]">
-                    Class / Grade
-                  </span>
-                  <span className="font-black text-sm text-black">
-                    {formatClassDisplay(selectedStudent.classGrade)}
-                  </span>
-                </div>
-                <div>
-                  <span className="font-bold text-gray-700 block uppercase text-[10px]">
-                    Age
-                  </span>
-                  <span className="font-semibold text-black">
-                    {selectedStudent.age ? `${selectedStudent.age} years` : 'Not specified'}
-                  </span>
-                </div>
-                <div>
-                  <span className="font-bold text-gray-700 block uppercase text-[10px]">
-                    Institution / School
-                  </span>
-                  <span className="font-semibold text-black">{selectedStudent.schoolName}</span>
-                </div>
-                <div>
-                  <span className="font-bold text-gray-700 block uppercase text-[10px]">
-                    Questionnaire Status
-                  </span>
-                  <span className="font-black text-black uppercase">{selectedStudent.status}</span>
-                </div>
-                <div>
-                  <span className="font-bold text-gray-700 block uppercase text-[10px]">
-                    Questions Answered
-                  </span>
-                  <span className="font-semibold text-black">
-                    {selectedStudent.answeredCount} of {QUESTIONS.length}
-                  </span>
-                </div>
-              </div>
-
-              {selectedStudent.status === 'In Progress' && (
-                <div className="mt-3 pt-3 border-t border-dashed border-gray-400 text-xs font-bold uppercase text-black">
-                  ** INCOMPLETE RESPONSES — Questionnaire currently in progress. Showing answers saved so far. **
-                </div>
-              )}
-
-              {selectedStudent.status === 'Not Started' && (
-                <div className="mt-3 pt-3 border-t border-dashed border-gray-400 text-xs font-bold uppercase text-black">
-                  ** NOT STARTED — Student has not begun answering the questionnaire. **
-                </div>
-              )}
-            </div>
-
-            {/* Questions & Answers in original order */}
-            {selectedStudent.answeredCount > 0 && (
-              <div className="space-y-6">
-                {SECTIONS.map((section) => {
-                  const sectionQuestions = QUESTIONS.filter((q) => q.section === section.id);
-
-                  return (
-                    <div key={section.id} className="space-y-3">
-                      <div className="border-b border-black pb-1 pt-2">
-                        <div className="text-[10px] font-black uppercase text-gray-700">
-                          Section {section.id}
-                        </div>
-                        <div className="text-sm font-black uppercase text-black">
-                          {section.title}
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        {sectionQuestions.map((q: Question) => {
-                          const answer = selectedStudent.answers[q.n];
-                          const hasAns =
-                            answer !== undefined &&
-                            answer !== null &&
-                            (typeof answer === 'string' ? answer.trim().length > 0 : answer.length > 0);
-
-                          return (
-                            <div
-                              key={q.n}
-                              className="border-b border-gray-300 pb-2.5 print-page-break-avoid"
-                            >
-                              <div className="text-xs font-bold text-black mb-1">
-                                <span className="font-black mr-1">{q.n}.</span>
-                                {q.text}
-                              </div>
-
-                              <div className="pl-4 text-xs">
-                                {hasAns ? (
-                                  q.type === 'multi' && Array.isArray(answer) ? (
-                                    <ul className="list-disc pl-4 space-y-0.5 font-medium text-black">
-                                      {answer.map((item, i) => (
-                                        <li key={i}>{item}</li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <p className="font-medium text-black whitespace-pre-wrap">
-                                      {String(answer)}
-                                    </p>
-                                  )
-                                ) : (
-                                  <span className="italic text-gray-600">
-                                    (No response provided)
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ) : (
-          /* PRINT VIEW B: FILTERED STUDENT LIST REPORT */
-          <div className="space-y-4">
-            <div className="text-xs text-gray-800 flex justify-between items-center pb-2 border-b border-gray-400">
-              <span>
-                Total Matching Students: <strong>{filteredStudents.length}</strong>
-              </span>
-              <span>Sorted Alphabetically (A–Z)</span>
-            </div>
-
-            <table className="w-full text-left text-xs border border-black border-collapse">
-              <thead>
-                <tr className="bg-gray-100 border-b border-black text-[10px] font-black uppercase">
-                  <th className="p-2 border-r border-black w-8 text-center">#</th>
-                  <th className="p-2 border-r border-black">Student Name</th>
-                  <th className="p-2 border-r border-black w-24">Class</th>
-                  <th className="p-2 border-r border-black w-14">Age</th>
-                  <th className="p-2 border-r border-black">Institution / School</th>
-                  <th className="p-2 w-28">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-300">
-                {filteredStudents.map((st, idx) => (
-                  <tr key={st.id} className="print-page-break-avoid">
-                    <td className="p-2 border-r border-gray-300 text-center font-mono">{idx + 1}</td>
-                    <td className="p-2 border-r border-gray-300 font-bold text-black">{st.fullName}</td>
-                    <td className="p-2 border-r border-gray-300">{formatClassDisplay(st.classGrade)}</td>
-                    <td className="p-2 border-r border-gray-300">{st.age || '—'}</td>
-                    <td className="p-2 border-r border-gray-300">{st.schoolName}</td>
-                    <td className="p-2 font-bold uppercase">{st.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Printable Footer */}
-        <div className="mt-8 pt-4 border-t border-gray-400 text-center text-[10px] text-gray-600 print-page-break-avoid">
-          DeRote Student Insight System — Confidential Administrative Document — Generated on {currentDateFormatted}
-        </div>
-      </div>
+      {selectedStudent ? (
+        <PrintableReport
+          type="individual-student"
+          title={reportTitle}
+          student={{
+            fullName: selectedStudent.fullName,
+            age: selectedStudent.age,
+            classGrade: selectedStudent.classGrade,
+            schoolName: selectedStudent.schoolName,
+            status: selectedStudent.status,
+            submittedAt: selectedStudent.submittedAt,
+            answers: selectedStudent.answers,
+          }}
+          date={currentDateFormatted}
+        />
+      ) : (
+        <PrintableReport
+          type="student-list"
+          title={reportTitle}
+          students={filteredStudents}
+          date={currentDateFormatted}
+        />
+      )}
     </div>
   );
 };

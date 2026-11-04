@@ -22,6 +22,7 @@ import {
   FileText,
   Loader2,
   Check,
+  Printer,
 } from 'lucide-react';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
 import {
@@ -43,6 +44,8 @@ import {
 } from '../services/api';
 import { SECTIONS, QUESTIONS } from '../data/questionnaire';
 import { resetStudentQuestionnaireSession } from '../services/questionnaireService';
+import { PrintableReport } from '../components/PrintableReport';
+import { executePrint } from '../utils/printHelper';
 
 interface StudentDashboardPageProps {
   onNavigate: (route: string) => void;
@@ -280,6 +283,11 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
     await logoutStudent();
     setShowSignoutModal(false);
     onNavigate('/login');
+  };
+
+  const handlePrintMyResponses = () => {
+    const reportTitle = `STUDENT REPORT — ${studentDisplayName.toUpperCase()}`;
+    executePrint(reportTitle);
   };
 
   const formattedSubmittedDate = useMemo(() => {
@@ -544,8 +552,8 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                     </p>
                   </div>
 
-                  {/* Primary Action Button: View My Answers */}
-                  <div className="flex items-center gap-2.5 shrink-0">
+                  {/* Primary Action Buttons: View My Answers & Print My Responses */}
+                  <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
                     <button
                       type="button"
                       onClick={() => handleOpenAnswersModal(1)}
@@ -553,6 +561,16 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                     >
                       <Eye className="w-4 h-4" />
                       <span>View My Answers</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handlePrintMyResponses}
+                      className="min-h-[46px] px-5 py-2.5 rounded-xl border border-[#CCE3FC] bg-white hover:bg-[#F2F7FC] text-[#062B50] hover:text-[#0866C6] text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-[0.98] cursor-pointer inline-flex items-center gap-2"
+                      title="Print or Save as PDF your complete submitted questionnaire"
+                    >
+                      <Printer className="w-4 h-4 text-[#0866C6]" />
+                      <span>Print My Responses</span>
                     </button>
                   </div>
                 </div>
@@ -693,14 +711,26 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                 </h3>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowAnswersModal(false)}
-                className="w-9 h-9 rounded-xl border border-[#D5E4F3] text-[#5A6E85] hover:text-[#062B50] hover:bg-[#F2F7FC] flex items-center justify-center transition-colors cursor-pointer"
-                aria-label="Close answers modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrintMyResponses}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#CCE3FC] bg-[#F2F7FC] hover:bg-[#EBF4FE] text-xs font-bold text-[#0866C6] transition-colors cursor-pointer"
+                  title="Print My Responses"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Print Responses</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAnswersModal(false)}
+                  className="w-9 h-9 rounded-xl border border-[#D5E4F3] text-[#5A6E85] hover:text-[#062B50] hover:bg-[#F2F7FC] flex items-center justify-center transition-colors cursor-pointer"
+                  aria-label="Close answers modal"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Section Pills Navigation */}
@@ -913,6 +943,31 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
             </div>
           </div>
         </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* PERSONAL PRINT REPORT (Only rendered when completed)     */}
+      {/* ========================================================= */}
+      {isCompleted && (
+        <PrintableReport
+          type="individual-student"
+          title={`STUDENT REPORT — ${studentDisplayName.toUpperCase()}`}
+          student={{
+            fullName: studentDisplayName,
+            age: studentAge,
+            classGrade: student?.classGrade || '10',
+            schoolName: studentSchool,
+            status: 'Submitted',
+            submittedAt: submissionData?.submittedAt,
+            answers: allAnswers,
+          }}
+          date={new Date().toLocaleDateString('en-US', {
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+          })}
+          isStudentSelfView={true}
+        />
       )}
     </div>
   );

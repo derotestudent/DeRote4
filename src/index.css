@@ -6,20 +6,61 @@
   }
 }
 
+/* On screen, hide the printable report area */
+@media screen {
+  #derote-printable-area {
+    display: none !important;
+  }
+}
+
+/* Dedicated print layout rules */
 @media print {
   @page {
-    margin: 14mm 14mm 14mm 14mm;
+    margin: 12mm 12mm 12mm 12mm;
     size: A4 portrait;
   }
 
-  body {
+  html,
+  body,
+  #root,
+  #root > div,
+  main {
     background-color: #ffffff !important;
-    color: #111827 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  .print-page-break-avoid {
+  /* Hide all screen interface elements */
+  .print\:hidden,
+  .no-print,
+  nav,
+  aside {
+    display: none !important;
+  }
+
+  /* Force printable area to show */
+  #derote-printable-area {
+    display: block !important;
+    visibility: visible !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Page break controls */
+  .print-page-break-avoid,
+  tr,
+  .print-avoid-break {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
@@ -27,5 +68,16 @@
   .print-page-break-before {
     break-before: page !important;
     page-break-before: always !important;
+  }
+
+  /* Crisp table styling */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  th,
+  td {
+    border-color: #000000 !important;
   }
 }

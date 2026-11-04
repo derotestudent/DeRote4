@@ -582,21 +582,19 @@ export function getReportTitle(context: {
 
   if (classPrefix && statusName) {
     const base = `${classPrefix} — ${statusName}`;
-    return cleanSearch ? `${base} (SEARCH: "${cleanSearch}")` : base;
+    return cleanSearch ? `${base} — SEARCH RESULTS — ${cleanSearch}` : base;
   }
 
   if (classPrefix && !statusName) {
-    const base = `${classPrefix} — STUDENT LIST`;
-    return cleanSearch ? `${base} (SEARCH: "${cleanSearch}")` : base;
+    return cleanSearch ? `${classPrefix} — SEARCH RESULTS — ${cleanSearch}` : `${classPrefix} — STUDENT LIST`;
   }
 
   if (!classPrefix && statusName) {
-    const base = statusName;
-    return cleanSearch ? `${base} (SEARCH: "${cleanSearch}")` : base;
+    return cleanSearch ? `${statusName} — SEARCH RESULTS — ${cleanSearch}` : statusName;
   }
 
   if (cleanSearch) {
-    return `STUDENT LIST (SEARCH: "${cleanSearch}")`;
+    return `SEARCH RESULTS — ${cleanSearch}`;
   }
 
   return 'ALL REGISTERED STUDENTS';
