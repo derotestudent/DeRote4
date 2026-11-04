@@ -177,7 +177,9 @@ export function setStoredStudent(student: LocalStudentAccount | null): void {
   }
 
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(STUDENT_AUTH_STATE_EVENT, { detail: { student } }));
+    queueMicrotask(() => {
+      window.dispatchEvent(new CustomEvent(STUDENT_AUTH_STATE_EVENT, { detail: { student } }));
+    });
   }
 }
 

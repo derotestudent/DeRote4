@@ -83,11 +83,13 @@ export function setAdminSession(admin: AdminAccount | null): void {
   }
 
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent(ADMIN_AUTH_STATE_EVENT, {
-        detail: { admin },
-      })
-    );
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent(ADMIN_AUTH_STATE_EVENT, {
+          detail: { admin },
+        })
+      );
+    });
   }
 }
 
