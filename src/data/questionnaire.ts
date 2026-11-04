@@ -8,7 +8,7 @@
 // says "Choose any that fit"). The choices below are a first guess. To change
 // one, swap 's' for 'm' (or the reverse) on that line. Confirm with the HOD.
 
-export const QUESTIONNAIRE_VERSION = 2;
+export const QUESTIONNAIRE_VERSION = 1;
 
 export type TextQuestion = {
   n: number;
@@ -54,8 +54,8 @@ export const OUTRO = {
 };
 
 export const SECTIONS: { id: number; title: string; intro?: string }[] = [
-  { id: 1, title: 'ABOUT ME — PART 1', intro: 'Tell us your personal information.' },
-  { id: 2, title: 'ABOUT ME — PART 2', intro: 'A few quick reflections about yourself.' },
+  { id: 1, title: 'ABOUT ME (PART 1)', intro: 'Personal information to create your student profile.' },
+  { id: 2, title: 'ABOUT ME (PART 2)', intro: 'A few reflective questions about how you see yourself.' },
   { id: 3, title: 'MY ACADEMIC WORLD' },
   { id: 4, title: 'MY STUDY HABITS' },
   {
@@ -79,20 +79,13 @@ const s = (n: number, section: number, text: string, options: string[]): ChoiceQ
 const m = (n: number, section: number, text: string, options: string[]): ChoiceQuestion => ({ n, section, type: 'multi', text, options });
 
 export const QUESTIONS: Question[] = [
-  // SECTION 1 | ABOUT ME — PART 1 (Personal Information)
-  t(1, 1, 'Name:', 1),
+  // SECTION 1 | ABOUT ME (PART 1) - PERSONAL INFORMATION
+  t(1, 1, 'Name or student ID (if you have been told to use one):', 1),
   t(2, 1, 'Age:', 1),
-  s(3, 1, 'Class:', [
-    '8',
-    '9',
-    '10',
-    '11',
-    '12',
-    'Others',
-  ]),
+  s(3, 1, 'Class:', ['8', '9', '10', '11', '12', 'Others']),
   t(4, 1, 'School and Institute:', 1),
 
-  // SECTION 2 | ABOUT ME — PART 2
+  // SECTION 2 | ABOUT ME (PART 2) - SELF-REFLECTION
   t(5, 2, 'What are three words you would use to describe yourself?', 2),
   t(6, 2, 'What do you most enjoy doing when you have free time?', 2),
   t(7, 2, 'What is something about you that people may not easily notice?', 2),
@@ -489,4 +482,5 @@ export const QUESTIONS: Question[] = [
 ];
 
 // Questions whose written answers the admin should see first when not blank
+// (only if you decide to build that view; the PDF does not ask for it).
 export const ATTENTION_QUESTIONS = [27, 51, 58, 63, 64];

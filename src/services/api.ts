@@ -88,23 +88,3 @@ export async function resetSubmission(): Promise<void> {
   }
 }
 
-// Will later call a PHP endpoint: GET /api/latest-answers.php
-export async function getLatestAnswers(): Promise<StudentAnswers | null> {
-  try {
-    const subRaw = localStorage.getItem(SUBMISSION_STORAGE_KEY);
-    if (subRaw) {
-      const parsed = JSON.parse(subRaw) as SubmissionData;
-      if (parsed.answers) return parsed.answers;
-    }
-    const draftRaw = localStorage.getItem(DRAFT_STORAGE_KEY);
-    if (draftRaw) {
-      const parsed = JSON.parse(draftRaw) as DraftData;
-      if (parsed.answers) return parsed.answers;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-

@@ -57,7 +57,7 @@ const INITIAL_STUDENT_ACCOUNTS: LocalStudentAccount[] = [
     phone: '9876543210',
     password: 'student123',
     completedReflections: 1,
-    totalReflections: 13,
+    totalReflections: 14,
     badge: 'Class 10 Student',
     createdAt: '2026-10-15T09:30:00.000Z',
     lastLoginAt: '2026-11-04T08:00:00.000Z',
@@ -65,7 +65,8 @@ const INITIAL_STUDENT_ACCOUNTS: LocalStudentAccount[] = [
   {
     id: 'student_seed_02',
     fullName: 'Diya Patel',
-    classGrade: 'Class 9',
+    age: '14',
+    classGrade: '9',
     schoolName: 'The Mother\'s International School',
     email: 'diya@derote.in',
     phone: '9876543211',
@@ -79,7 +80,8 @@ const INITIAL_STUDENT_ACCOUNTS: LocalStudentAccount[] = [
   {
     id: 'student_seed_03',
     fullName: 'Rohan Verma',
-    classGrade: 'Class 10',
+    age: '16',
+    classGrade: '10',
     schoolName: 'Sanskriti School, Chanakyapuri',
     email: 'rohan@derote.in',
     phone: '9876543212',
@@ -93,7 +95,8 @@ const INITIAL_STUDENT_ACCOUNTS: LocalStudentAccount[] = [
   {
     id: 'student_seed_04',
     fullName: 'Ananya Iyer',
-    classGrade: 'Class 8',
+    age: '13',
+    classGrade: '8',
     schoolName: 'Modern School, Barakhamba Road',
     email: 'ananya@derote.in',
     phone: '9876543213',
@@ -108,6 +111,7 @@ const INITIAL_STUDENT_ACCOUNTS: LocalStudentAccount[] = [
 
 export function getStoredRegisteredAccounts(): LocalStudentAccount[] {
   try {
+    if (typeof localStorage === 'undefined') return INITIAL_STUDENT_ACCOUNTS;
     const raw = localStorage.getItem(STORAGE_KEY_ACCOUNTS);
     if (!raw) {
       localStorage.setItem(STORAGE_KEY_ACCOUNTS, JSON.stringify(INITIAL_STUDENT_ACCOUNTS));
@@ -131,7 +135,9 @@ export function getStoredRegisteredAccounts(): LocalStudentAccount[] {
 
 export function saveRegisteredAccounts(accounts: LocalStudentAccount[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY_ACCOUNTS, JSON.stringify(accounts));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_ACCOUNTS, JSON.stringify(accounts));
+    }
   } catch (err) {
     console.warn('Failed to save registered student accounts:', err);
   }
@@ -139,6 +145,7 @@ export function saveRegisteredAccounts(accounts: LocalStudentAccount[]): void {
 
 export function getCurrentStudent(): LocalStudentAccount | null {
   try {
+    if (typeof localStorage === 'undefined') return null;
     const raw = localStorage.getItem(STORAGE_KEY_STUDENT);
     return raw ? JSON.parse(raw) : null;
   } catch {
@@ -148,6 +155,7 @@ export function getCurrentStudent(): LocalStudentAccount | null {
 
 export function setStoredStudent(student: LocalStudentAccount | null): void {
   try {
+    if (typeof localStorage === 'undefined') return;
     if (student) {
       localStorage.setItem(STORAGE_KEY_STUDENT, JSON.stringify(student));
       localStorage.setItem(
@@ -155,7 +163,6 @@ export function setStoredStudent(student: LocalStudentAccount | null): void {
         JSON.stringify({
           id: student.id,
           fullName: student.fullName,
-          age: student.age,
           classGrade: student.classGrade,
           schoolName: student.schoolName,
           phone: student.phone,
@@ -431,48 +438,58 @@ export async function logoutStudent(): Promise<void> {
 }
 
 /**
- * Creates or updates the student profile using ONLY About Me Part 1
- * (Name: Q1, Age: Q2, Class: Q3, School and Institute: Q4).
+ * Creates or updates a student profile strictly using About Me Part 1 information:
+ * - Q1: Name
+ * - Q2: Age
+ * - Q3: Class (8, 9, 10, 11, 12, Others)
+ * - Q4: School and Institute
+ * Part 2 or later questions are explicitly NOT used to build the student profile.
  */
-export function syncStudentProfileFromPart1(answers: Record<number, string | string[]>): LocalStudentAccount {
-  const name = (typeof answers[1] === 'string' ? answers[1] : '')?.trim();
-  const age = (typeof answers[2] === 'string' ? answers[2] : '')?.trim();
-  const classGrade = (typeof answers[3] === 'string' ? answers[3] : '')?.trim();
-  const school = (typeof answers[4] === 'string' ? answers[4] : '')?.trim();
+export function syncStudentProfileFromPart1(
+  answers: Record<number, string | string[]>
+): LocalStudentAccount {
+  const existing = getCurrentStudent();
+  const nameVal = typeof answers[1] === 'string' ? answers[1].trim() : '';
+  const ageVal = typeof answers[2] === 'string' ? answers[2].trim() : '';
+  const rawClass = answers[3];
+  const classVal =
+    typeof rawClass === 'string'
+      ? rawClass.trim()
+      : Array.isArray(rawClass) && rawClass.length > 0
+      ? rawClass[0].trim()
+      : '';
+  const schoolVal = typeof answers[4] === 'string' ? answers[4].trim() : '';
 
-  const current = getCurrentStudent();
-  const studentId = current?.id || `student_${Date.now()}`;
-  const resolvedName = name || current?.fullName || 'Student';
-  const resolvedAge = age || current?.age || '';
-  const resolvedClass = classGrade || current?.classGrade || '10';
-  const resolvedSchool = school || current?.schoolName || 'School / Institute';
+  const studentId = existing?.id || `student_${Date.now()}`;
+  const now = new Date().toISOString();
 
   const updated: LocalStudentAccount = {
     id: studentId,
-    fullName: resolvedName,
-    age: resolvedAge,
-    classGrade: resolvedClass,
-    schoolName: resolvedSchool,
-    email: current?.email || '',
-    phone: current?.phone,
-    badge: resolvedClass ? `Class ${resolvedClass} Student` : 'Student',
-    createdAt: current?.createdAt || new Date().toISOString(),
-    lastLoginAt: new Date().toISOString(),
-    completedReflections: current?.completedReflections || 0,
-    totalReflections: 13,
+    fullName: nameVal || existing?.fullName || 'Student',
+    age: ageVal || existing?.age || '',
+    classGrade: classVal || existing?.classGrade || '10',
+    schoolName: schoolVal || existing?.schoolName || 'General Institute',
+    email: existing?.email || `student_${studentId.slice(-6)}@derote.in`,
+    phone: existing?.phone,
+    password: existing?.password || 'student123',
+    isSyntheticEmail: existing?.isSyntheticEmail ?? true,
+    completedReflections: existing?.completedReflections ?? 1,
+    totalReflections: existing?.totalReflections ?? 14,
+    badge: classVal ? `Class ${classVal} Student` : existing?.badge || 'Student',
+    createdAt: existing?.createdAt || now,
+    lastLoginAt: now,
   };
 
   setStoredStudent(updated);
 
   const accounts = getStoredRegisteredAccounts();
-  const existingIdx = accounts.findIndex((a) => a.id === studentId);
-  if (existingIdx >= 0) {
-    accounts[existingIdx] = { ...accounts[existingIdx], ...updated };
-    saveRegisteredAccounts(accounts);
-  } else if (name) {
+  const idx = accounts.findIndex((acc) => acc.id === studentId);
+  if (idx >= 0) {
+    accounts[idx] = updated;
+  } else {
     accounts.unshift(updated);
-    saveRegisteredAccounts(accounts);
   }
+  saveRegisteredAccounts(accounts);
 
   return updated;
 }

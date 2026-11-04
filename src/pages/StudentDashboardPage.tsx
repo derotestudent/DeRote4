@@ -35,7 +35,7 @@ import {
   QuestionnaireSession,
 } from '../services/questionnaireService';
 import { generateStudentInsightReport, StudentInsightReport } from '../services/insightEngine';
-import { resetSubmission, getLatestAnswers } from '../services/api';
+import { resetSubmission } from '../services/api';
 
 interface StudentDashboardPageProps {
   onNavigate: (route: string) => void;
@@ -96,20 +96,27 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
 
   useEffect(() => {
     const unsub = onLocalAuthChange((curr) => {
-      setStudent(curr);
-    });
-
-    // Check if we have latest answers to sync Part 1 (Name, Age, Class, School/Institute)
-    getLatestAnswers().then((latestAnswers) => {
-      if (
-        latestAnswers &&
-        (latestAnswers[1] || latestAnswers[2] || latestAnswers[3] || latestAnswers[4])
-      ) {
-        const synced = syncStudentProfileFromPart1(latestAnswers);
-        setStudent(synced);
+      if (curr) {
+        setStudent(curr);
+      } else {
+        // If no explicit student session, check if student filled About Me Part 1
+        try {
+          const subRaw = localStorage.getItem('derote_student_questionnaire_submission');
+          const draftRaw = localStorage.getItem('derote_student_questionnaire_draft');
+          const raw = subRaw || draftRaw;
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const ans = parsed?.answers;
+            if (ans && (ans[1] || ans[2] || ans[3] || ans[4])) {
+              const created = syncStudentProfileFromPart1(ans);
+              setStudent(created);
+              return;
+            }
+          }
+        } catch {}
+        setStudent(null);
       }
     });
-
     return () => unsub();
   }, []);
 
@@ -119,12 +126,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
       loadStudentQuestionnaireSession(student)
         .then(({ session: loadedSession }) => {
           setSession(loadedSession);
-          getLatestAnswers().then((ans) => {
-            if (ans && (ans[1] || ans[2] || ans[3] || ans[4])) {
-              const synced = syncStudentProfileFromPart1(ans);
-              setStudent(synced);
-            }
-          });
         })
         .finally(() => {
           setIsLoading(false);
@@ -244,13 +245,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
     }
   };
 
-  const formatClassGrade = (grade?: string): string => {
-    if (!grade) return 'Class 10';
-    if (grade === 'Others') return 'Others';
-    if (grade.toLowerCase().startsWith('class')) return grade;
-    return `Class ${grade}`;
-  };
-
   // Generate insight report if answers are available
   const insightReport: StudentInsightReport | null = useMemo(() => {
     if (!session || !session.answers) return null;
@@ -326,8 +320,8 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
             <div className="text-right hidden sm:block">
               <div className="text-xs font-bold text-[#062B50]">{student.fullName}</div>
               <div className="text-[11px] text-[#64778C]">
-                {student.age ? `Age ${student.age} · ` : ''}
-                {formatClassGrade(student.classGrade)} · {student.schoolName}
+                {student.classGrade === 'Others' ? 'Others' : `Class ${student.classGrade}`}
+                {student.age ? ` · Age ${student.age}` : ''} · {student.schoolName}
               </div>
             </div>
 
@@ -357,13 +351,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
               Hello, {student.fullName}
             </h1>
             <p className="text-xs sm:text-sm text-[#5A6E85] mt-1">
-              <span className="font-semibold text-[#062B50]">
-                {student.age ? `Age ${student.age} · ` : ''}
-                {formatClassGrade(student.classGrade)} · {student.schoolName}
-              </span>
-              <span className="block mt-0.5 text-[#64778C]">
-                Your safe space to reflect on school, interests, and what matters to you.
-              </span>
+              Your safe space to reflect on school, interests, and what matters to you.
             </p>
           </div>
 
@@ -615,7 +603,17 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
         {/* TAB 3: PROFILE */}
         {activeTab === 'profile' && (
           <div className="max-w-2xl bg-white rounded-3xl p-6 sm:p-8 border border-[#E8F3FF] shadow-xs space-y-6">
-            <h2 className="text-xl font-bold text-[#062B50] tracking-tight">Student Profile Details</h2>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-[#062B50] tracking-tight">Student Profile Details</h2>
+                <p className="text-xs text-[#5A6E85] mt-0.5">
+                  Created strictly using your About Me (Part 1) personal information.
+                </p>
+              </div>
+              <span className="text-xs font-bold px-3 py-1 bg-[#EBF4FE] text-[#0866C6] rounded-full border border-[#0866C6]/20">
+                About Me Part 1
+              </span>
+            </div>
 
             <div className="space-y-4 text-sm">
               <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
@@ -628,18 +626,22 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
 
               <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
                 <div className="flex items-center gap-3">
-                  <Clock className="w-4 h-4 text-[#0866C6]" />
+                  <Calendar className="w-4 h-4 text-[#0866C6]" />
                   <span className="text-[#64778C]">Age</span>
                 </div>
-                <span className="font-bold text-[#062B50]">{student.age || 'Not specified'}</span>
+                <span className="font-bold text-[#062B50]">
+                  {student.age ? `${student.age} years old` : 'Not specified'}
+                </span>
               </div>
 
               <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
                 <div className="flex items-center gap-3">
                   <BookOpen className="w-4 h-4 text-[#0866C6]" />
-                  <span className="text-[#64778C]">Class / Grade</span>
+                  <span className="text-[#64778C]">Class</span>
                 </div>
-                <span className="font-bold text-[#062B50]">{formatClassGrade(student.classGrade)}</span>
+                <span className="font-bold text-[#062B50]">
+                  {student.classGrade === 'Others' ? 'Others' : `Class ${student.classGrade}`}
+                </span>
               </div>
 
               <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
