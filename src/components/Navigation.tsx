@@ -59,7 +59,7 @@ export const Navigation: React.FC<NavigationProps> = ({ onNavigate, currentRoute
             type="button"
             className="inline-flex items-center justify-center min-h-[38px] sm:min-h-[42px] px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-[#062B50] hover:text-[#0866C6] transition-colors cursor-pointer rounded-xl focus-visible:outline-2 focus-visible:outline-[#0866C6] whitespace-nowrap"
           >
-            Sign in
+            {activeStudent ? 'Dashboard' : 'Sign in'}
           </button>
 
           {/* BUTTON 2: Explore what's on your mind */}

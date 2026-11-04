@@ -34,6 +34,7 @@ import {
   QuestionnaireSession,
 } from '../services/questionnaireService';
 import { generateStudentInsightReport, StudentInsightReport } from '../services/insightEngine';
+import { resetSubmission } from '../services/api';
 
 interface StudentDashboardPageProps {
   onNavigate: (route: string) => void;
@@ -186,6 +187,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
   const handleRetakeConfirm = async () => {
     if (!student) return;
     await resetStudentQuestionnaireSession(student);
+    await resetSubmission();
     setShowRetakeModal(false);
     onNavigate('/questionnaire');
   };
@@ -426,10 +428,11 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowRetakeModal(true)}
-                    className="p-2.5 rounded-xl border border-[#D5E4F3] text-xs font-bold text-[#64778C] hover:text-[#062B50] cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-[#0866C6]/30 text-xs sm:text-sm font-bold text-[#0866C6] hover:bg-[#EBF4FE] transition-colors cursor-pointer"
                     title="Retake reflection"
                   >
                     <RotateCcw className="w-4 h-4" />
+                    <span>Retake Questionnaire</span>
                   </button>
                 )}
               </div>
@@ -750,7 +753,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E8F3FF] shadow-2xl">
             <h3 className="text-xl font-bold text-[#062B50] mb-2">Retake Reflection?</h3>
             <p className="text-xs sm:text-sm text-[#5A6E85] mb-5 leading-relaxed">
-              This will reset your answers to the 14 reflection questions so you can answer fresh today.
+              This will reset your questionnaire submission and draft so you can take it fresh from Section 1.
               Your student profile and planner tasks will remain completely safe.
             </p>
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#E8F3FF]">

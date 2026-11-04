@@ -4,7 +4,7 @@
  * Standalone client-side admin service:
  * - Instant administrative authentication
  * - Real-time cohort analytics computed from local student questionnaire submissions
- * - Zero external backend or Firebase dependencies
+ * - Zero external cloud service dependencies (pure browser-local storage)
  */
 
 import { QUESTION_BANK } from '../data/questionnaireBank';

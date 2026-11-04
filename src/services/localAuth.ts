@@ -3,7 +3,7 @@
  *
  * Fully standalone local storage auth service:
  * - Instant, private client-side account management
- * - Zero external backend or Firebase dependencies
+ * - Zero external cloud service dependencies (pure browser-local storage)
  */
 
 export interface LocalStudentAccount {

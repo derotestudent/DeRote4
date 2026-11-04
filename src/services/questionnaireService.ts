@@ -3,7 +3,7 @@
  *
  * Standalone client-side persistence for student reflection drafts and final submissions:
  * - Instant offline-first localStorage persistence
- * - Zero external backend or Firebase dependencies
+ * - Zero external cloud service dependencies (pure browser-local storage)
  */
 
 import { QUESTION_BANK } from '../data/questionnaireBank';

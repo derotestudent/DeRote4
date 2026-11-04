@@ -1,470 +1,352 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  Clock,
-  Sparkles,
-  HelpCircle,
-  AlertCircle,
-  Save,
-  RotateCcw,
-  Check,
-  Send,
-  Loader2,
-} from 'lucide-react';
-import { DeRoteWordmark } from '../components/DeRoteWordmark';
-import { QUESTION_BANK, CUSTOM_OPTION_ID, QuestionItem } from '../data/questionnaireBank';
+  INTRO,
+  SECTIONS,
+  QUESTIONS,
+  EXCLUSIVE_OPTIONS,
+  Question,
+  ChoiceQuestion,
+  TextQuestion,
+} from '../data/questionnaire';
 import {
-  getCurrentStudent,
-  onLocalAuthChange,
-  LocalStudentAccount,
-} from '../services/localAuth';
-import {
-  loadStudentQuestionnaireSession,
-  saveStudentDraft,
-  submitStudentResponses,
-  resetStudentQuestionnaireSession,
-  QuestionnaireSession,
-  QuestionAnswerState,
-} from '../services/questionnaireService';
+  loadDraft,
+  saveDraft,
+  submitQuestionnaire,
+  hasSubmitted,
+  resetSubmission,
+  StudentAnswers,
+} from '../services/api';
+import { getCurrentStudent } from '../services/localAuth';
+import { resetStudentQuestionnaireSession } from '../services/questionnaireService';
 
 interface QuestionnairePageProps {
   onNavigate: (route: string) => void;
 }
 
-export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate }) => {
-  const [student, setStudent] = useState<LocalStudentAccount | null>(() => getCurrentStudent());
-  const [session, setSession] = useState<QuestionnaireSession | null>(null);
-  const [currentIndex, setCurrentIndex] = useState<number>(0);
-  const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'offline_unsynced'>('saved');
-  const [lastSavedTime, setLastSavedTime] = useState<string>('Just now');
-  const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
-  const [showSubmitModal, setShowSubmitModal] = useState<boolean>(false);
-  const [submitting, setSubmitting] = useState<boolean>(false);
-  const [customText, setCustomText] = useState<string>('');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+type ScreenView = 'loading' | 'intro' | 'section' | 'review' | 'confirmation';
 
+export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate }) => {
+  const [view, setView] = useState<ScreenView>('loading');
+  const [currentSection, setCurrentSection] = useState<number>(1);
+  const [answers, setAnswers] = useState<StudentAnswers>({});
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isLoaded, setIsLoaded] = useState<boolean>(false);
+
+  // Initialize draft and check submission status on mount
   useEffect(() => {
-    const unsub = onLocalAuthChange((curr) => {
-      setStudent(curr);
-    });
-    return () => unsub();
+    let isMounted = true;
+
+    async function init() {
+      // Note: The real one-submission rule will be enforced on the server.
+      const submitted = await hasSubmitted();
+      if (!isMounted) return;
+
+      if (submitted) {
+        setView('confirmation');
+        setIsLoaded(true);
+        return;
+      }
+
+      const draft = await loadDraft();
+      if (!isMounted) return;
+
+      if (draft) {
+        setAnswers(draft.answers || {});
+        if (draft.currentSection >= 1 && draft.currentSection <= 12) {
+          setCurrentSection(draft.currentSection);
+          setView('section');
+        } else if (draft.currentSection === 13) {
+          setView('review');
+        } else {
+          setView('intro');
+        }
+      } else {
+        setView('intro');
+      }
+
+      setIsLoaded(true);
+    }
+
+    init();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  useEffect(() => {
-    if (student) {
-      loadStudentQuestionnaireSession(student).then(({ session: loadedSession, isAlreadySubmitted }) => {
-        setSession(loadedSession);
-        setCurrentIndex(loadedSession.currentQuestionIndex || 0);
-        if (isAlreadySubmitted) {
-          setIsSubmitted(true);
-        }
-      });
-    }
-  }, [student]);
+  const sectionData = useMemo(() => {
+    return SECTIONS.find((s) => s.id === currentSection) || SECTIONS[0];
+  }, [currentSection]);
 
-  const currentQuestion: QuestionItem = useMemo(() => {
-    return QUESTION_BANK[currentIndex] || QUESTION_BANK[0];
-  }, [currentIndex]);
+  const sectionQuestions = useMemo(() => {
+    return QUESTIONS.filter((q) => q.section === currentSection);
+  }, [currentSection]);
 
-  const currentAnswer: QuestionAnswerState = useMemo(() => {
-    if (!session || !session.answers[currentQuestion.id]) {
-      return { status: 'unanswered', selectedOptions: [], customText: '' };
-    }
-    return session.answers[currentQuestion.id];
-  }, [session, currentQuestion.id]);
-
-  useEffect(() => {
-    if (currentAnswer.customText) {
-      setCustomText(currentAnswer.customText);
-    } else {
-      setCustomText('');
-    }
-  }, [currentQuestion.id, currentAnswer.customText]);
-
-  const persistSession = async (updated: QuestionnaireSession) => {
-    setIsSaving(true);
-    setSaveStatus('saving');
-    const res = await saveStudentDraft(updated);
-    setIsSaving(false);
-    if (res.confirmedCloudSaved) {
-      setSaveStatus('saved');
-      setLastSavedTime(
-        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      );
-    } else {
-      setSaveStatus('offline_unsynced');
-    }
+  const handleTextChange = (questionNumber: number, value: string) => {
+    setAnswers((prev) => {
+      const updated = { ...prev, [questionNumber]: value };
+      saveDraft(updated, currentSection);
+      return updated;
+    });
   };
 
-  const handleOptionToggle = (optionId: string) => {
-    if (!session || isSubmitted) return;
-    setErrorMessage(null);
+  const handleSingleChange = (questionNumber: number, option: string) => {
+    setAnswers((prev) => {
+      const updated = { ...prev, [questionNumber]: option };
+      saveDraft(updated, currentSection);
+      return updated;
+    });
+  };
 
-    const question = currentQuestion;
-    const currentSelections = [...currentAnswer.selectedOptions];
-    const targetOption = question.options.find((o) => o.id === optionId);
-    const isExclusive = targetOption?.isExclusive;
+  const handleMultiChange = (questionNumber: number, option: string) => {
+    setAnswers((prev) => {
+      const current = (prev[questionNumber] as string[]) || [];
+      const isSelected = current.includes(option);
+      let updatedList: string[];
 
-    let nextSelections: string[] = [];
-
-    if (isExclusive) {
-      // If selecting an exclusive option, it replaces all other selections
-      if (currentSelections.includes(optionId)) {
-        nextSelections = [];
+      if (isSelected) {
+        updatedList = current.filter((item) => item !== option);
       } else {
-        nextSelections = [optionId];
-      }
-    } else {
-      // Non-exclusive: remove any exclusive selection first
-      const nonExclusiveExisting = currentSelections.filter(
-        (id) => !question.options.find((o) => o.id === id)?.isExclusive
-      );
-
-      if (question.type === 'single') {
-        nextSelections = [optionId];
-      } else {
-        // Multi
-        const max = question.maxSelections || 3;
-        if (nonExclusiveExisting.includes(optionId)) {
-          nextSelections = nonExclusiveExisting.filter((id) => id !== optionId);
+        if (EXCLUSIVE_OPTIONS.includes(option)) {
+          // If exclusive option ticked, clear all others
+          updatedList = [option];
         } else {
-          if (nonExclusiveExisting.length >= max) {
-            setErrorMessage(`You can choose up to ${max} options for this question.`);
-            return;
-          }
-          nextSelections = [...nonExclusiveExisting, optionId];
+          // If standard option ticked, clear any exclusive ones
+          updatedList = current.filter((item) => !EXCLUSIVE_OPTIONS.includes(item)).concat(option);
         }
       }
-    }
 
-    const nextStatus: 'answered' | 'unanswered' = nextSelections.length > 0 ? 'answered' : 'unanswered';
-    const updatedAnswers = {
-      ...session.answers,
-      [question.id]: {
-        status: nextStatus,
-        selectedOptions: nextSelections,
-        customText: nextSelections.includes(CUSTOM_OPTION_ID) ? customText : '',
-      },
-    };
-
-    const nextSession: QuestionnaireSession = {
-      ...session,
-      answers: updatedAnswers,
-      currentQuestionIndex: currentIndex,
-    };
-
-    setSession(nextSession);
-    persistSession(nextSession);
+      const updated = { ...prev, [questionNumber]: updatedList };
+      saveDraft(updated, currentSection);
+      return updated;
+    });
   };
 
-  const handleCustomTextChange = (text: string) => {
-    setCustomText(text);
-    if (!session || isSubmitted) return;
-
-    const question = currentQuestion;
-    const isCustomSelected = currentAnswer.selectedOptions.includes(CUSTOM_OPTION_ID);
-    if (!isCustomSelected) return;
-
-    const updatedAnswers = {
-      ...session.answers,
-      [question.id]: {
-        ...currentAnswer,
-        customText: text,
-      },
-    };
-
-    const nextSession: QuestionnaireSession = {
-      ...session,
-      answers: updatedAnswers,
-    };
-
-    setSession(nextSession);
-    persistSession(nextSession);
+  const handleBegin = () => {
+    setCurrentSection(1);
+    setView('section');
+    saveDraft(answers, 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSkip = () => {
-    if (!session || isSubmitted) return;
-    const question = currentQuestion;
-
-    const updatedAnswers = {
-      ...session.answers,
-      [question.id]: {
-        status: 'skipped' as const,
-        selectedOptions: [],
-        customText: '',
-      },
-    };
-
-    const nextIndex = Math.min(currentIndex + 1, QUESTION_BANK.length - 1);
-    const nextSession: QuestionnaireSession = {
-      ...session,
-      answers: updatedAnswers,
-      currentQuestionIndex: nextIndex,
-    };
-
-    setSession(nextSession);
-    setCurrentIndex(nextIndex);
-    persistSession(nextSession);
-  };
-
-  const handleNext = () => {
-    if (currentIndex < QUESTION_BANK.length - 1) {
-      const nextIndex = currentIndex + 1;
-      setCurrentIndex(nextIndex);
-      if (session) {
-        const nextSession = { ...session, currentQuestionIndex: nextIndex };
-        setSession(nextSession);
-        persistSession(nextSession);
-      }
+  const handleBackFromSection = () => {
+    if (currentSection <= 1) {
+      setCurrentSection(0);
+      setView('intro');
+      saveDraft(answers, 0);
     } else {
-      setShowSubmitModal(true);
+      const prev = currentSection - 1;
+      setCurrentSection(prev);
+      saveDraft(answers, prev);
     }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handlePrevious = () => {
-    if (currentIndex > 0) {
-      const prevIndex = currentIndex - 1;
-      setCurrentIndex(prevIndex);
-      if (session) {
-        const nextSession = { ...session, currentQuestionIndex: prevIndex };
-        setSession(nextSession);
-        persistSession(nextSession);
-      }
+  const handleNextFromSection = () => {
+    if (currentSection >= 12) {
+      setCurrentSection(13);
+      setView('review');
+      saveDraft(answers, 13);
+    } else {
+      const next = currentSection + 1;
+      setCurrentSection(next);
+      saveDraft(answers, next);
     }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const getSectionUnansweredCount = (secId: number): number => {
+    const questions = QUESTIONS.filter((q) => q.section === secId);
+    return questions.filter((q) => {
+      const val = answers[q.n];
+      if (val === undefined || val === null) return true;
+      if (typeof val === 'string') return val.trim() === '';
+      if (Array.isArray(val)) return val.length === 0;
+      return true;
+    }).length;
   };
 
   const handleSubmit = async () => {
-    if (!session) return;
-    setSubmitting(true);
-    setErrorMessage(null);
-
-    const result = await submitStudentResponses(session);
-    setSubmitting(false);
-
-    if (result.success) {
-      setIsSubmitted(true);
-      setShowSubmitModal(false);
-    } else {
-      setErrorMessage(result.error || 'Failed to submit responses. Please retry.');
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await submitQuestionnaire(answers);
+      setView('confirmation');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      console.error('Submission failed', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleRetake = async () => {
-    if (!student) return;
-    const fresh = await resetStudentQuestionnaireSession(student);
-    setSession(fresh);
-    setCurrentIndex(0);
-    setIsSubmitted(false);
+    await resetSubmission();
+    const currStudent = getCurrentStudent();
+    if (currStudent) {
+      await resetStudentQuestionnaireSession(currStudent);
+    }
+    setAnswers({});
+    setCurrentSection(1);
+    setView('section');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const totalAnswered = useMemo(() => {
-    if (!session) return 0;
-    return Object.values(session.answers).filter((a) => a.status === 'answered').length;
-  }, [session]);
-
-  const progressPercent = Math.round(((currentIndex + 1) / QUESTION_BANK.length) * 100);
-
-  if (isSubmitted) {
+  if (!isLoaded || view === 'loading') {
     return (
-      <div className="min-h-screen bg-[#F4F8FD] flex flex-col justify-between text-[#102C46]">
-        <header className="bg-white border-b border-[#E8F3FF] px-4 sm:px-8 py-3.5 sticky top-0 z-20">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <button
-              onClick={() => onNavigate('/')}
-              className="flex items-center text-left focus-visible:outline-2 focus-visible:outline-[#0866C6] rounded-lg cursor-pointer"
-            >
-              <DeRoteWordmark showDescriptor={true} size="md" />
-            </button>
-            <button
-              onClick={() => onNavigate('/dashboard')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0866C6] text-white font-bold text-xs sm:text-sm hover:bg-[#062B50] transition-colors"
-            >
-              <span>Go to Dashboard</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </header>
-
-        <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
-          <div className="max-w-lg w-full bg-white rounded-3xl p-6 sm:p-10 border border-[#E8F3FF] shadow-xl text-center">
-            <div className="w-16 h-16 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-6 shadow-xs border border-emerald-100">
-              <CheckCircle2 className="w-8 h-8" />
-            </div>
-
-            <span className="text-xs font-bold text-[#0866C6] uppercase tracking-wider bg-[#E8F3FF] px-3 py-1 rounded-full inline-block mb-3">
-              Reflection Completed
-            </span>
-
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight mb-3">
-              Thank you for sharing your thoughts!
-            </h1>
-
-            <p className="text-sm text-[#5A6E85] leading-relaxed mb-8">
-              Your 14 reflection responses have been safely saved to your private DeRote profile. You can
-              review your personalized narrative, habits, and self-chosen learning directions anytime on your dashboard.
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                type="button"
-                onClick={() => onNavigate('/dashboard')}
-                className="flex-1 py-3 px-5 rounded-2xl bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-sm transition-all shadow-md shadow-[#0866C6]/20 cursor-pointer flex items-center justify-center gap-2"
-              >
-                <span>View Student Dashboard</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={handleRetake}
-                className="py-3 px-4 rounded-2xl bg-white border border-[#D5E4F3] text-[#062B50] hover:bg-[#F2F7FC] font-bold text-xs sm:text-sm transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Retake Assessment</span>
-              </button>
-            </div>
-          </div>
-        </main>
+      <div className="min-h-screen bg-[#F7F5EE] flex items-center justify-center p-4">
+        <p className="text-[#202923] text-base font-medium">Loading questionnaire...</p>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-[#F4F8FD] flex flex-col justify-between text-[#102C46]">
-      {/* Questionnaire Sticky Header */}
-      <header className="bg-white border-b border-[#E8F3FF] px-4 sm:px-8 py-3 sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
-          <button
-            onClick={() => onNavigate('/')}
-            className="flex items-center text-left focus-visible:outline-2 focus-visible:outline-[#0866C6] rounded-lg cursor-pointer"
-          >
-            <DeRoteWordmark showDescriptor={false} size="sm" />
-          </button>
+  // 1. Intro Screen
+  if (view === 'intro') {
+    return (
+      <div className="min-h-screen bg-[#F7F5EE] text-[#202923] py-8 px-4 sm:px-6">
+        <div className="max-w-2xl mx-auto bg-white border border-[#E5E2D6] p-6 sm:p-10 rounded-lg">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#245847] uppercase mb-2">
+            {INTRO.title}
+          </h1>
+          <p className="text-sm sm:text-base font-semibold text-[#202923]/70 mb-8">
+            {INTRO.subtitle}
+          </p>
 
-          {/* Progress Indicator */}
-          <div className="flex-1 max-w-xs mx-4 hidden sm:block">
-            <div className="flex items-center justify-between text-xs text-[#64778C] mb-1 font-semibold">
-              <span>Question {currentIndex + 1} of {QUESTION_BANK.length}</span>
+          <div className="mb-6">
+            <h2 className="text-base sm:text-lg font-bold text-[#245847] uppercase mb-3">
+              {INTRO.whyHeading}
+            </h2>
+            <div className="space-y-3 text-sm sm:text-base text-[#202923] leading-relaxed">
+              {INTRO.why.map((para, idx) => (
+                <p key={idx}>{para}</p>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-8 p-4 bg-[#F7F5EE] border border-[#E5E2D6] rounded">
+            <p className="text-xs sm:text-sm text-[#202923] leading-relaxed">
+              {INTRO.beforeYouBegin}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleBegin}
+            className="w-full sm:w-auto min-h-[44px] px-8 py-3 bg-[#245847] hover:bg-[#1b4336] text-white font-semibold text-base rounded cursor-pointer transition-colors"
+          >
+            Begin
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Questionnaire Section Screen
+  if (view === 'section') {
+    const progressPercent = Math.round((currentSection / 12) * 100);
+
+    return (
+      <div className="min-h-screen bg-[#F7F5EE] text-[#202923] py-8 px-4 sm:px-6">
+        <div className="max-w-2xl mx-auto space-y-6">
+          {/* Progress Header */}
+          <div className="bg-white border border-[#E5E2D6] p-4 sm:p-6 rounded-lg space-y-3">
+            <div className="flex items-center justify-between text-sm font-semibold text-[#202923]">
+              <span>Section {currentSection} of 12</span>
               <span>{progressPercent}%</span>
             </div>
-            <div className="w-full h-2 bg-[#E8F3FF] rounded-full overflow-hidden">
+            <div className="w-full bg-[#E5E2D6] h-2 rounded-full overflow-hidden">
               <div
-                className="h-full bg-[#0866C6] transition-all duration-300 rounded-full"
+                className="bg-[#245847] h-full transition-all duration-200"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
           </div>
 
-          {/* Cloud Auto-Save Status */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 text-xs text-[#64778C]">
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#0866C6]" />
-                  <span className="hidden sm:inline">Saving...</span>
-                </>
-              ) : saveStatus === 'saved' ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="hidden sm:inline">Saved {lastSavedTime}</span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="hidden sm:inline">Offline</span>
-                </>
-              )}
-            </div>
-
-            <button
-              onClick={() => onNavigate(student ? '/dashboard' : '/')}
-              className="text-xs font-bold text-[#64778C] hover:text-[#062B50] px-2 py-1 rounded cursor-pointer"
-            >
-              Exit
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Question Flow */}
-      <main className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-10">
-        {/* Error Alert */}
-        {errorMessage && (
-          <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs sm:text-sm text-amber-900 flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <span>{errorMessage}</span>
-          </div>
-        )}
-
-        {/* Question Card */}
-        <div className="bg-white rounded-3xl p-6 sm:p-10 border border-[#E8F3FF] shadow-md">
-          {/* Question Tag & Number */}
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-extrabold uppercase tracking-wider text-[#0866C6] bg-[#E8F3FF] px-3 py-1 rounded-full">
-              Question {currentQuestion.number} of {QUESTION_BANK.length}
-            </span>
-
-            <span className="text-xs text-[#64778C] font-semibold">
-              {currentQuestion.type === 'single'
-                ? 'Choose 1 option'
-                : `Choose up to ${currentQuestion.maxSelections || 3} options`}
-            </span>
+          {/* Section Title & Intro */}
+          <div className="bg-white border border-[#E5E2D6] p-6 sm:p-8 rounded-lg space-y-2">
+            <h2 className="text-lg sm:text-xl font-bold text-[#245847] uppercase tracking-wide">
+              {sectionData.title}
+            </h2>
+            {sectionData.intro && (
+              <p className="text-sm sm:text-base text-[#202923] leading-relaxed">
+                {sectionData.intro}
+              </p>
+            )}
           </div>
 
-          {/* Title & Prompt */}
-          <h2 className="text-xl sm:text-2xl font-extrabold text-[#062B50] tracking-tight mb-3">
-            {currentQuestion.title}
-          </h2>
-          <p className="text-sm sm:text-base text-[#5A6E85] leading-relaxed mb-6 font-normal">
-            {currentQuestion.prompt}
-          </p>
+          {/* Questions List */}
+          <div className="space-y-6">
+            {sectionQuestions.map((q: Question) => {
+              const currentVal = answers[q.n];
 
-          {/* Options List */}
-          <div className="space-y-3">
-            {currentQuestion.options.map((option) => {
-              const isSelected = currentAnswer.selectedOptions.includes(option.id);
               return (
-                <div key={option.id}>
-                  <button
-                    type="button"
-                    onClick={() => handleOptionToggle(option.id)}
-                    className={`w-full text-left p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3.5 ${
-                      isSelected
-                        ? 'bg-[#EBF4FE] border-[#0866C6] text-[#062B50] shadow-xs'
-                        : 'bg-white border-[#E2EDF8] text-[#102C46] hover:border-[#0866C6]/40 hover:bg-[#F8FAFD]'
-                    }`}
-                  >
-                    <div
-                      className={`w-5 h-5 rounded-${
-                        currentQuestion.type === 'single' ? 'full' : 'md'
-                      } border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-                        isSelected
-                          ? 'border-[#0866C6] bg-[#0866C6] text-white'
-                          : 'border-[#CBD5E1] bg-white'
-                      }`}
-                    >
-                      {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                <div
+                  key={q.n}
+                  className="bg-white border border-[#E5E2D6] p-5 sm:p-6 rounded-lg space-y-4"
+                >
+                  <p className="text-sm sm:text-base font-semibold text-[#202923] leading-snug">
+                    <span className="font-bold text-[#245847] mr-1.5">{q.n}.</span>
+                    {q.text}
+                  </p>
+
+                  {/* Text Question */}
+                  {q.type === 'text' && (
+                    <textarea
+                      rows={q.lines}
+                      value={(currentVal as string) || ''}
+                      onChange={(e) => handleTextChange(q.n, e.target.value)}
+                      className="w-full p-3 border border-[#E5E2D6] rounded text-sm sm:text-base text-[#202923] focus:outline-none focus:border-[#245847] bg-[#F7F5EE]"
+                    />
+                  )}
+
+                  {/* Single Choice Question */}
+                  {q.type === 'single' && (
+                    <div className="flex flex-col gap-2">
+                      {q.options.map((opt, oIdx) => (
+                        <label
+                          key={oIdx}
+                          className="flex items-center min-h-[44px] px-3 py-2 border border-[#E5E2D6] rounded cursor-pointer hover:bg-[#F7F5EE] transition-colors"
+                        >
+                          <input
+                            type="radio"
+                            name={`q_${q.n}`}
+                            checked={currentVal === opt}
+                            onChange={() => handleSingleChange(q.n, opt)}
+                            className="w-5 h-5 accent-[#245847] shrink-0"
+                          />
+                          <span className="ml-3 text-sm sm:text-base text-[#202923] leading-snug">
+                            {opt}
+                          </span>
+                        </label>
+                      ))}
                     </div>
+                  )}
 
-                    <span className="text-sm sm:text-[15px] font-medium leading-relaxed flex-1">
-                      {option.text}
-                    </span>
-                  </button>
+                  {/* Multi Choice Question */}
+                  {q.type === 'multi' && (
+                    <div className="flex flex-col gap-2">
+                      {q.options.map((opt, oIdx) => {
+                        const selectedList = (currentVal as string[]) || [];
+                        const isChecked = selectedList.includes(opt);
 
-                  {/* Custom write-in box when selected */}
-                  {option.isCustom && isSelected && (
-                    <div className="mt-2.5 ml-8 pr-2">
-                      <input
-                        type="text"
-                        value={customText}
-                        onChange={(e) => handleCustomTextChange(e.target.value)}
-                        placeholder="Type your own answer in your words..."
-                        className="w-full text-sm px-4 py-2.5 rounded-xl border border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/20 outline-none text-[#102C46]"
-                        autoFocus
-                      />
+                        return (
+                          <label
+                            key={oIdx}
+                            className="flex items-center min-h-[44px] px-3 py-2 border border-[#E5E2D6] rounded cursor-pointer hover:bg-[#F7F5EE] transition-colors"
+                          >
+                            <input
+                              type="checkbox"
+                              name={`q_${q.n}_${oIdx}`}
+                              checked={isChecked}
+                              onChange={() => handleMultiChange(q.n, opt)}
+                              className="w-5 h-5 accent-[#245847] shrink-0 rounded"
+                            />
+                            <span className="ml-3 text-sm sm:text-base text-[#202923] leading-snug">
+                              {opt}
+                            </span>
+                          </label>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -472,99 +354,137 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
             })}
           </div>
 
-          {/* Footer Navigation Bar */}
-          <div className="mt-8 pt-6 border-t border-[#E8F3FF] flex flex-wrap items-center justify-between gap-3">
+          {/* Navigation Buttons */}
+          <div className="flex items-center justify-between pt-2">
             <button
               type="button"
-              onClick={handlePrevious}
-              disabled={currentIndex === 0}
-              className="px-4 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-bold text-[#062B50] hover:bg-[#F2F7FC] disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center gap-1.5 cursor-pointer"
+              onClick={handleBackFromSection}
+              className="min-h-[44px] px-6 py-2.5 bg-white border border-[#E5E2D6] text-[#202923] font-semibold text-sm sm:text-base rounded cursor-pointer hover:bg-[#F7F5EE] transition-colors"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Previous</span>
+              Back
             </button>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSkip}
-                className="px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-[#64778C] hover:text-[#062B50] transition-colors cursor-pointer"
-              >
-                Skip question
-              </button>
-
-              {currentIndex === QUESTION_BANK.length - 1 ? (
-                <button
-                  type="button"
-                  onClick={() => setShowSubmitModal(true)}
-                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm transition-all shadow-md shadow-emerald-600/20 flex items-center gap-2 cursor-pointer"
-                >
-                  <span>Review &amp; Submit</span>
-                  <Send className="w-4 h-4" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  className="px-6 py-2.5 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-xs sm:text-sm transition-all shadow-md shadow-[#0866C6]/25 flex items-center gap-2 cursor-pointer"
-                >
-                  <span>Next Question</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={handleNextFromSection}
+              className="min-h-[44px] px-6 py-2.5 bg-[#245847] hover:bg-[#1b4336] text-white font-semibold text-sm sm:text-base rounded cursor-pointer transition-colors"
+            >
+              {currentSection === 12 ? 'Review' : 'Next'}
+            </button>
           </div>
         </div>
+      </div>
+    );
+  }
 
-        {/* Reassurance Note */}
-        <p className="mt-6 text-center text-xs text-[#64778C] leading-relaxed">
-          Take your time. No right or wrong choices—just what feels true for you today.
-        </p>
-      </main>
-
-      {/* Confirmation Submit Modal */}
-      {showSubmitModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 bg-[#062B50]/40 backdrop-blur-xs flex items-center justify-center p-4"
-        >
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#E8F3FF] shadow-2xl text-left">
-            <h3 className="text-xl font-bold text-[#062B50] mb-2 tracking-tight">
-              Ready to submit your reflections?
-            </h3>
-            <p className="text-xs sm:text-sm text-[#5A6E85] mb-5 leading-relaxed">
-              You answered <strong>{totalAnswered} of {QUESTION_BANK.length}</strong> questions.
-              Once submitted, your personal reflection summary will be prepared and viewable on your dashboard.
+  // 3. Review Screen
+  if (view === 'review') {
+    return (
+      <div className="min-h-screen bg-[#F7F5EE] text-[#202923] py-8 px-4 sm:px-6">
+        <div className="max-w-2xl mx-auto space-y-6">
+          <div className="bg-white border border-[#E5E2D6] p-6 sm:p-8 rounded-lg space-y-2">
+            <h1 className="text-xl sm:text-2xl font-bold text-[#245847] uppercase">
+              Review Your Answers
+            </h1>
+            <p className="text-sm sm:text-base text-[#202923]">
+              You can review or change your answers below. Answering is optional—you may submit at any time.
             </p>
+          </div>
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#E8F3FF]">
-              <button
-                type="button"
-                onClick={() => setShowSubmitModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-[#64778C] hover:text-[#062B50] cursor-pointer"
-              >
-                Back to questions
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="px-5 py-2.5 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-xs sm:text-sm transition-colors cursor-pointer flex items-center gap-2 shadow-sm disabled:opacity-50"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Submitting...</span>
-                  </>
-                ) : (
-                  <span>Confirm &amp; Finish</span>
-                )}
-              </button>
-            </div>
+          <div className="bg-white border border-[#E5E2D6] rounded-lg divide-y divide-[#E5E2D6] overflow-hidden">
+            {SECTIONS.map((sec) => {
+              const unansweredCount = getSectionUnansweredCount(sec.id);
+              const totalSectionQuestions = QUESTIONS.filter((q) => q.section === sec.id).length;
+
+              return (
+                <button
+                  key={sec.id}
+                  type="button"
+                  onClick={() => {
+                    setCurrentSection(sec.id);
+                    setView('section');
+                    saveDraft(answers, sec.id);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="w-full text-left min-h-[44px] p-4 sm:p-5 flex items-center justify-between hover:bg-[#F7F5EE] transition-colors cursor-pointer"
+                >
+                  <div>
+                    <p className="text-xs font-semibold text-[#245847] uppercase">
+                      Section {sec.id}
+                    </p>
+                    <p className="text-sm sm:text-base font-bold text-[#202923]">
+                      {sec.title}
+                    </p>
+                  </div>
+                  <div className="text-right pl-3 shrink-0">
+                    {unansweredCount === 0 ? (
+                      <span className="text-xs sm:text-sm font-semibold text-[#245847]">
+                        All answered
+                      </span>
+                    ) : (
+                      <span className="text-xs sm:text-sm font-medium text-[#202923]/70">
+                        {unansweredCount} of {totalSectionQuestions} unanswered
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentSection(12);
+                setView('section');
+                saveDraft(answers, 12);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="min-h-[44px] px-6 py-2.5 bg-white border border-[#E5E2D6] text-[#202923] font-semibold text-sm sm:text-base rounded cursor-pointer hover:bg-[#F7F5EE] transition-colors"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="min-h-[44px] px-8 py-2.5 bg-[#245847] hover:bg-[#1b4336] text-white font-semibold text-sm sm:text-base rounded cursor-pointer transition-colors disabled:opacity-60"
+            >
+              {isSubmitting ? 'Submitting...' : 'Submit'}
+            </button>
           </div>
         </div>
-      )}
+      </div>
+    );
+  }
+
+  // 4. Confirmation Screen
+  return (
+    <div className="min-h-screen bg-[#F7F5EE] text-[#202923] flex items-center justify-center py-12 px-4 sm:px-6">
+      <div className="max-w-md w-full bg-white border border-[#E5E2D6] p-8 sm:p-10 rounded-lg text-center space-y-4">
+        <h1 className="text-xl sm:text-2xl font-bold text-[#202923]">
+          Your responses have been submitted.
+        </h1>
+        <p className="text-base sm:text-lg text-[#202923] leading-relaxed">
+          You've taken an important step toward understanding yourself.
+        </p>
+        <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={handleRetake}
+            className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 bg-[#245847] hover:bg-[#1b4336] text-white font-semibold text-sm sm:text-base rounded cursor-pointer transition-colors"
+          >
+            Retake Questionnaire
+          </button>
+          <button
+            type="button"
+            onClick={() => onNavigate('/dashboard')}
+            className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 bg-white border border-[#E5E2D6] text-[#202923] hover:bg-[#F7F5EE] font-semibold text-sm sm:text-base rounded cursor-pointer transition-colors"
+          >
+            View Dashboard
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
