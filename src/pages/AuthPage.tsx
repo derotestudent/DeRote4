@@ -80,9 +80,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       if (res.success) {
         setStatusMessage({
           type: 'success',
-          text: 'Welcome back! Opening your student dashboard...',
+          text: 'Welcome back! Opening your session...',
         });
-        setTimeout(() => onNavigate('/dashboard'), 350);
+        const target = sessionStorage.getItem('derote_auth_redirect') || '/dashboard';
+        sessionStorage.removeItem('derote_auth_redirect');
+        setTimeout(() => onNavigate(target), 350);
       } else {
         setStatusMessage({
           type: 'error',
@@ -139,7 +141,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           type: 'success',
           text: 'Account created successfully! Welcome to DeRote.',
         });
-        setTimeout(() => onNavigate('/dashboard'), 400);
+        const target = sessionStorage.getItem('derote_auth_redirect') || '/dashboard';
+        sessionStorage.removeItem('derote_auth_redirect');
+        setTimeout(() => onNavigate(target), 400);
       } else {
         setStatusMessage({
           type: 'error',
