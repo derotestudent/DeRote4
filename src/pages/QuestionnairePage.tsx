@@ -16,7 +16,10 @@ import {
   resetSubmission,
   StudentAnswers,
 } from '../services/api';
-import { getCurrentStudent } from '../services/localAuth';
+import {
+  getCurrentStudent,
+  syncStudentProfileFromPart1,
+} from '../services/localAuth';
 import { resetStudentQuestionnaireSession } from '../services/questionnaireService';
 
 interface QuestionnairePageProps {
@@ -31,6 +34,8 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
   const [answers, setAnswers] = useState<StudentAnswers>({});
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
+
+  const totalSections = SECTIONS.length;
 
   // Initialize draft and check submission status on mount
   useEffect(() => {
@@ -52,10 +57,10 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
 
       if (draft) {
         setAnswers(draft.answers || {});
-        if (draft.currentSection >= 1 && draft.currentSection <= 12) {
+        if (draft.currentSection >= 1 && draft.currentSection <= totalSections) {
           setCurrentSection(draft.currentSection);
           setView('section');
-        } else if (draft.currentSection === 13) {
+        } else if (draft.currentSection > totalSections) {
           setView('review');
         } else {
           setView('intro');
@@ -72,7 +77,7 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [totalSections]);
 
   const sectionData = useMemo(() => {
     return SECTIONS.find((s) => s.id === currentSection) || SECTIONS[0];
@@ -86,6 +91,10 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
     setAnswers((prev) => {
       const updated = { ...prev, [questionNumber]: value };
       saveDraft(updated, currentSection);
+      // Auto-sync student profile whenever personal information (Part 1: Q1-Q4) is modified
+      if (questionNumber <= 4) {
+        syncStudentProfileFromPart1(updated);
+      }
       return updated;
     });
   };
@@ -94,6 +103,10 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
     setAnswers((prev) => {
       const updated = { ...prev, [questionNumber]: option };
       saveDraft(updated, currentSection);
+      // Auto-sync student profile whenever personal information (Part 1: Q1-Q4) is modified
+      if (questionNumber <= 4) {
+        syncStudentProfileFromPart1(updated);
+      }
       return updated;
     });
   };
@@ -143,10 +156,16 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
   };
 
   const handleNextFromSection = () => {
-    if (currentSection >= 12) {
-      setCurrentSection(13);
+    // If advancing from Section 1 (Part 1), ensure the student profile is synced immediately
+    if (currentSection === 1) {
+      syncStudentProfileFromPart1(answers);
+    }
+
+    if (currentSection >= totalSections) {
+      const reviewSectionId = totalSections + 1;
+      setCurrentSection(reviewSectionId);
       setView('review');
-      saveDraft(answers, 13);
+      saveDraft(answers, reviewSectionId);
     } else {
       const next = currentSection + 1;
       setCurrentSection(next);
@@ -171,6 +190,8 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
     setIsSubmitting(true);
     try {
       await submitQuestionnaire(answers);
+      // Guarantee student profile is synced strictly using Part 1 information
+      syncStudentProfileFromPart1(answers);
       setView('confirmation');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
@@ -243,7 +264,7 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
 
   // 2. Questionnaire Section Screen
   if (view === 'section') {
-    const progressPercent = Math.round((currentSection / 12) * 100);
+    const progressPercent = Math.round((currentSection / totalSections) * 100);
 
     return (
       <div className="min-h-screen bg-[#F7F5EE] text-[#202923] py-8 px-4 sm:px-6">
@@ -251,7 +272,7 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
           {/* Progress Header */}
           <div className="bg-white border border-[#E5E2D6] p-4 sm:p-6 rounded-lg space-y-3">
             <div className="flex items-center justify-between text-sm font-semibold text-[#202923]">
-              <span>Section {currentSection} of 12</span>
+              <span>Section {currentSection} of {totalSections}</span>
               <span>{progressPercent}%</span>
             </div>
             <div className="w-full bg-[#E5E2D6] h-2 rounded-full overflow-hidden">
@@ -368,7 +389,7 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
               onClick={handleNextFromSection}
               className="min-h-[44px] px-6 py-2.5 bg-[#245847] hover:bg-[#1b4336] text-white font-semibold text-sm sm:text-base rounded cursor-pointer transition-colors"
             >
-              {currentSection === 12 ? 'Review' : 'Next'}
+              {currentSection === totalSections ? 'Review' : 'Next'}
             </button>
           </div>
         </div>
@@ -435,9 +456,9 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
             <button
               type="button"
               onClick={() => {
-                setCurrentSection(12);
+                setCurrentSection(totalSections);
                 setView('section');
-                saveDraft(answers, 12);
+                saveDraft(answers, totalSections);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               className="min-h-[44px] px-6 py-2.5 bg-white border border-[#E5E2D6] text-[#202923] font-semibold text-sm sm:text-base rounded cursor-pointer hover:bg-[#F7F5EE] transition-colors"
