@@ -19,7 +19,9 @@ import {
   signInStudentWithEmail,
   signInStudentWithGoogle,
   registerStudentWithEmail,
-} from '../services/firebaseAuth';
+  isStudentProfileComplete,
+  LocalStudentAccount,
+} from '../services/localAuth';
 
 interface AuthPageProps {
   initialMode?: 'login' | 'signup';
@@ -55,10 +57,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     text: string;
   } | null>(null);
 
-  const handleRedirect = () => {
-    const target = sessionStorage.getItem('derote_auth_redirect') || '/dashboard';
-    sessionStorage.removeItem('derote_auth_redirect');
-    setTimeout(() => onNavigate(target), 350);
+  const handleRedirect = (res?: { student?: LocalStudentAccount; requiresProfileCompletion?: boolean }) => {
+    if (res?.requiresProfileCompletion || (res?.student && !isStudentProfileComplete(res.student))) {
+      setTimeout(() => onNavigate('/complete-profile'), 350);
+    } else {
+      const target = sessionStorage.getItem('derote_auth_redirect') || '/dashboard';
+      sessionStorage.removeItem('derote_auth_redirect');
+      setTimeout(() => onNavigate(target), 350);
+    }
   };
 
   // 1. Email and Password Sign In
@@ -90,9 +96,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       if (res.success) {
         setStatusMessage({
           type: 'success',
-          text: `Welcome back, ${res.student?.fullName || 'Student'}! Opening your session...`,
+          text: `Welcome, ${res.student?.fullName || res.admin?.fullName || 'User'}! Opening your session...`,
         });
-        handleRedirect();
+        if (res.admin) {
+          setTimeout(() => onNavigate('/admin'), 350);
+        } else {
+          handleRedirect(res);
+        }
       } else {
         setStatusMessage({
           type: 'error',
@@ -120,9 +130,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         setUnauthorizedDomain(null);
         setStatusMessage({
           type: 'success',
-          text: `Welcome, ${res.student?.fullName || 'Student'}! Signed in with Google.`,
+          text: `Welcome, ${res.student?.fullName || res.admin?.fullName || 'User'}! Signed in with Google.`,
         });
-        handleRedirect();
+        if (res.admin) {
+          setTimeout(() => onNavigate('/admin'), 350);
+        } else {
+          handleRedirect(res);
+        }
       } else {
         if (res.errorCode === 'auth/unauthorized-domain') {
           const currentHostname = res.domain || (typeof window !== 'undefined' ? window.location.hostname : '');
@@ -178,9 +192,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       if (res.success) {
         setStatusMessage({
           type: 'success',
-          text: 'Account created successfully! Welcome to DeRote.',
+          text: 'Account created! Please complete your student profile to enter your dashboard.',
         });
-        handleRedirect();
+        handleRedirect(res);
       } else {
         setStatusMessage({
           type: 'error',

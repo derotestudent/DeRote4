@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Shield, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
-import { loginAdmin, AdminAccount } from '../services/adminService';
+import { loginAdmin, loginAdminWithGoogle } from '../services/adminService';
 
 interface AdminLoginPageProps {
   onNavigate: (route: string) => void;
@@ -16,6 +16,15 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+  const handleSuccess = () => {
+    if (onAdminLoginSuccess) {
+      onAdminLoginSuccess();
+    } else {
+      onNavigate('/admin');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,11 +39,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
     try {
       const result = await loginAdmin(email.trim(), password);
       if (result.success) {
-        if (onAdminLoginSuccess) {
-          onAdminLoginSuccess();
-        } else {
-          onNavigate('/admin');
-        }
+        handleSuccess();
       } else {
         setError(result.error || 'Authentication failed. Please verify credentials.');
       }
@@ -42,6 +47,23 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
       setError('A network error occurred. Please check your connection.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleAdminLogin = async () => {
+    setError(null);
+    setIsGoogleLoading(true);
+    try {
+      const result = await loginAdminWithGoogle();
+      if (result.success) {
+        handleSuccess();
+      } else {
+        setError(result.error || 'Google administrator sign-in failed.');
+      }
+    } catch {
+      setError('Failed to authenticate administrator with Google.');
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -86,6 +108,53 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
             </div>
           )}
 
+          {/* Google Sign In for Admin */}
+          <div className="mb-5">
+            <button
+              type="button"
+              onClick={handleGoogleAdminLogin}
+              disabled={isLoading || isGoogleLoading}
+              className="w-full min-h-[46px] py-2 px-4 rounded-xl border border-[#D5E4F3] bg-white hover:bg-[#F8FAFD] text-[#062B50] text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-3 shadow-xs hover:border-[#0866C6]/40 active:scale-[0.99] disabled:opacity-60"
+            >
+              {isGoogleLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 text-[#0866C6] animate-spin" />
+                  <span>Connecting Google Account...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="#4285F4"
+                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                    />
+                  </svg>
+                  <span>Sign in with Google</span>
+                </>
+              )}
+            </button>
+
+            <div className="relative flex py-3.5 items-center">
+              <div className="flex-grow border-t border-[#E8F3FF]"></div>
+              <span className="flex-shrink mx-3 text-[11px] text-[#64778C] font-semibold uppercase tracking-wider">
+                Or with password
+              </span>
+              <div className="flex-grow border-t border-[#E8F3FF]"></div>
+            </div>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-[#062B50] mb-1.5">
@@ -95,7 +164,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="contact@derote.in"
+                placeholder="administrator@derote.in"
                 required
                 className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none"
               />

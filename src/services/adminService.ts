@@ -1,26 +1,37 @@
 /**
  * Admin Service for DeRote Student Insight System
  *
- * Standalone client-side admin service:
- * - Instant administrative authentication
- * - Real-time cohort analytics computed from local student questionnaire submissions
- * - Zero external cloud service dependencies (pure browser-local storage)
+ * Firebase Authentication is the single source of truth for administrative access:
+ * - Administrators sign in with verified Firebase credentials (Email/Password or Google)
+ * - Zero hardcoded passwords or fake local sessions
+ * - Real-time cohort analytics computed from student questionnaire submissions
  */
 
 import { QUESTION_BANK } from '../data/questionnaireBank';
 import { QuestionnaireSession } from './questionnaireService';
 import { generateStudentInsightReport, StudentInsightReport } from './insightEngine';
 import { getStoredRegisteredAccounts, LocalStudentAccount } from './localAuth';
+import {
+  type AdminAccount,
+  loginAdmin,
+  loginAdminWithGoogle,
+  signOutAdmin,
+  getCurrentAdmin,
+  onAdminAuthChange,
+  DESIGNATED_ADMIN_UID,
+  verifyAdminStatus,
+} from './firebaseAuth';
 
-export interface AdminAccount {
-  id: string;
-  fullName: string;
-  roleTitle: string;
-  institution: string;
-  email: string;
-  avatarText?: string;
-  password?: string;
-}
+export type { AdminAccount };
+export {
+  loginAdmin,
+  loginAdminWithGoogle,
+  signOutAdmin,
+  getCurrentAdmin,
+  onAdminAuthChange,
+  DESIGNATED_ADMIN_UID,
+  verifyAdminStatus,
+};
 
 export interface StudentAdminRecord {
   id: string;
@@ -52,137 +63,12 @@ export interface CohortAnalytics {
   topTeacherGuidanceWishes: { label: string; count: number; percentage: number }[];
 }
 
-export const PRIMARY_ADMIN_UID = 'admin@derote.in';
-export const MASTER_ADMIN_UID = 'admin_master_01';
-
-export const ADMIN_ACCOUNT: AdminAccount = {
-  id: MASTER_ADMIN_UID,
-  fullName: 'DeRote Academic Leadership',
-  roleTitle: 'Master Administrator',
-  institution: 'DeRote Partner School Network',
-  email: 'admin@derote.in',
-  avatarText: 'AD',
-  password: 'admin123',
-};
-
-const ADMIN_SESSION_KEY = 'derote_active_admin_session_v1';
-export const ADMIN_AUTH_STATE_EVENT = 'derote_admin_auth_changed';
-
-/**
- * Updates admin session in localStorage and broadcasts custom events
- */
-export function setAdminSession(admin: AdminAccount | null): void {
-  try {
-    if (admin) {
-      localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(admin));
-    } else {
-      localStorage.removeItem(ADMIN_SESSION_KEY);
-    }
-  } catch (err) {
-    console.warn('Failed to update admin session in storage:', err);
-  }
-
-  if (typeof window !== 'undefined') {
-    queueMicrotask(() => {
-      window.dispatchEvent(
-        new CustomEvent(ADMIN_AUTH_STATE_EVENT, {
-          detail: { admin },
-        })
-      );
-    });
-  }
-}
-
-/**
- * Subscribes to admin auth state changes
- */
-export function onAdminAuthChange(callback: (admin: AdminAccount | null) => void): () => void {
-  callback(getCurrentAdmin());
-
-  const handler = (event: Event) => {
-    const custom = event as CustomEvent<{ admin: AdminAccount | null }>;
-    if (custom.detail !== undefined) {
-      callback(custom.detail.admin);
-    } else {
-      callback(getCurrentAdmin());
-    }
-  };
-
-  const storageHandler = (e: StorageEvent) => {
-    if (e.key === ADMIN_SESSION_KEY) {
-      callback(getCurrentAdmin());
-    }
-  };
-
-  window.addEventListener(ADMIN_AUTH_STATE_EVENT, handler);
-  window.addEventListener('storage', storageHandler);
-
-  return () => {
-    window.removeEventListener(ADMIN_AUTH_STATE_EVENT, handler);
-    window.removeEventListener('storage', storageHandler);
-  };
-}
-
-/**
- * Retrieves the currently logged in admin session
- */
-export function getCurrentAdmin(): AdminAccount | null {
-  try {
-    const raw = localStorage.getItem(ADMIN_SESSION_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {
-    // continue
-  }
-  return null;
-}
-
-/**
- * Authenticates administrator credentials locally
- */
-export async function loginAdmin(
-  email: string,
-  pass: string
-): Promise<{ success: boolean; error?: string; admin?: AdminAccount }> {
-  const cleanEmail = email.trim().toLowerCase();
-
-  if (!cleanEmail || !pass) {
-    return {
-      success: false,
-      error: 'Please enter both administrator email and password.',
-    };
-  }
-
-  // Recognize admin@derote.in or contact@derote.in with admin123
-  if (
-    (cleanEmail === 'admin@derote.in' || cleanEmail === 'contact@derote.in') &&
-    pass === 'admin123'
-  ) {
-    const account: AdminAccount = {
-      ...ADMIN_ACCOUNT,
-      email: cleanEmail,
-    };
-    setAdminSession(account);
-    return { success: true, admin: account };
-  }
-
-  return {
-    success: false,
-    error: 'Invalid administrator email or password. Please verify credentials.',
-  };
-}
-
-/**
- * Signs out Administrator
- */
-export async function signOutAdmin(): Promise<void> {
-  setAdminSession(null);
-}
+export const PRIMARY_ADMIN_UID = DESIGNATED_ADMIN_UID;
 
 /**
  * Helper to generate a realistic sample completed questionnaire session
  */
 function createSampleCompletedSession(student: LocalStudentAccount): QuestionnaireSession {
-  const now = new Date().toISOString();
   const answers: Record<string, any> = {};
 
   // Populate sample answers based on question bank so insight engine works
@@ -211,7 +97,7 @@ function createSampleCompletedSession(student: LocalStudentAccount): Questionnai
 }
 
 /**
- * Loads all student records and their associated questionnaire submissions from local storage
+ * Loads all student records and their associated questionnaire submissions
  */
 export async function fetchAllStudentAdminRecords(): Promise<StudentAdminRecord[]> {
   const students = getStoredRegisteredAccounts();

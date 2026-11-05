@@ -13,6 +13,7 @@ import {
   TermsOfUsePage,
   ContactPrivacyPage,
 } from './pages/LegalPages';
+import { ShieldAlert, Loader2 } from 'lucide-react';
 import {
   getCurrentAdmin,
   onAdminAuthChange,
@@ -21,8 +22,11 @@ import {
 import {
   getCurrentStudent,
   onLocalAuthChange,
+  isStudentProfileComplete,
   LocalStudentAccount,
+  logoutStudent,
 } from './services/localAuth';
+import { DESIGNATED_ADMIN_UID, isAuthenticationReady } from './services/firebaseAuth';
 
 export default function App() {
   const [route, setRoute] = useState<string>(() => {
@@ -30,6 +34,7 @@ export default function App() {
     const h = window.location.hash;
     const match = (r: string) => p === r || h === `#${r}` || h === `#/${r.replace(/^\//, '')}`;
 
+    if (match('/complete-profile')) return '/complete-profile';
     if (match('/dashboard')) return '/dashboard';
     if (match('/profile/edit') || match('/edit-profile')) return '/profile/edit';
     if (match('/signup')) return '/signup';
@@ -46,10 +51,17 @@ export default function App() {
 
   const [adminUser, setAdminUser] = useState<AdminAccount | null>(() => getCurrentAdmin());
   const [studentUser, setStudentUser] = useState<LocalStudentAccount | null>(() => getCurrentStudent());
+  const [isAuthReady, setIsAuthReady] = useState<boolean>(() => isAuthenticationReady());
 
   useEffect(() => {
-    const unsubAdmin = onAdminAuthChange((admin) => setAdminUser(admin));
-    const unsubStudent = onLocalAuthChange((student) => setStudentUser(student));
+    const unsubAdmin = onAdminAuthChange((admin, ready) => {
+      setAdminUser(admin);
+      if (ready) setIsAuthReady(true);
+    });
+    const unsubStudent = onLocalAuthChange((student) => {
+      setStudentUser(student);
+      if (isAuthenticationReady()) setIsAuthReady(true);
+    });
 
     return () => {
       unsubAdmin();
@@ -57,7 +69,11 @@ export default function App() {
     };
   }, []);
 
-  const isSuperAdmin = adminUser !== null;
+  const isSuperAdmin = Boolean(
+    (adminUser && adminUser.id === DESIGNATED_ADMIN_UID) ||
+    (studentUser && studentUser.id === DESIGNATED_ADMIN_UID)
+  );
+  const isProfileDone = isStudentProfileComplete(studentUser);
 
   useEffect(() => {
     const onLocationChange = () => {
@@ -65,7 +81,8 @@ export default function App() {
       const h = window.location.hash;
       const match = (r: string) => p === r || h === `#${r}` || h === `#/${r.replace(/^\//, '')}`;
 
-      if (match('/dashboard')) setRoute('/dashboard');
+      if (match('/complete-profile')) setRoute('/complete-profile');
+      else if (match('/dashboard')) setRoute('/dashboard');
       else if (match('/profile/edit') || match('/edit-profile')) setRoute('/profile/edit');
       else if (match('/signup')) setRoute('/signup');
       else if (match('/login')) setRoute('/login');
@@ -98,35 +115,112 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Route Guard: If student is logged in with incomplete profile, enforce /complete-profile
+  // Admin is exempt from student profile completion
+  const shouldEnforceProfileCompletion =
+    studentUser !== null && !isSuperAdmin && !isProfileDone;
+
+  // Guard against flash of admin content while restoring authentication
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F4F8FD] text-[#102C46]">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-[#0866C6] animate-spin" />
+          <p className="text-xs sm:text-sm font-semibold text-[#64778C]">Verifying DeRote authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-white text-[#102C46] font-sans antialiased">
       {route === '/login' && (
         <main className="flex-1 flex flex-col">
-          <AuthPage initialMode="login" onNavigate={navigate} />
+          {isSuperAdmin ? (
+            <AdminDashboardPage onNavigate={navigate} />
+          ) : studentUser ? (
+            shouldEnforceProfileCompletion ? (
+              <EditProfilePage mode="completion" onNavigate={navigate} />
+            ) : (
+              <StudentDashboardPage onNavigate={navigate} />
+            )
+          ) : (
+            <AuthPage initialMode="login" onNavigate={navigate} />
+          )}
         </main>
       )}
 
       {route === '/signup' && (
         <main className="flex-1 flex flex-col">
-          <AuthPage initialMode="signup" onNavigate={navigate} />
+          {isSuperAdmin ? (
+            <AdminDashboardPage onNavigate={navigate} />
+          ) : studentUser ? (
+            shouldEnforceProfileCompletion ? (
+              <EditProfilePage mode="completion" onNavigate={navigate} />
+            ) : (
+              <StudentDashboardPage onNavigate={navigate} />
+            )
+          ) : (
+            <AuthPage initialMode="signup" onNavigate={navigate} />
+          )}
+        </main>
+      )}
+
+      {route === '/complete-profile' && (
+        <main className="flex-1 flex flex-col">
+          {isSuperAdmin ? (
+            <AdminDashboardPage onNavigate={navigate} />
+          ) : studentUser ? (
+            isProfileDone ? (
+              <StudentDashboardPage onNavigate={navigate} />
+            ) : (
+              <EditProfilePage mode="completion" onNavigate={navigate} />
+            )
+          ) : (
+            <AuthPage initialMode="login" onNavigate={navigate} />
+          )}
         </main>
       )}
 
       {route === '/dashboard' && (
         <main className="flex-1 flex flex-col">
-          <StudentDashboardPage onNavigate={navigate} />
+          {isSuperAdmin ? (
+            <AdminDashboardPage onNavigate={navigate} />
+          ) : studentUser ? (
+            shouldEnforceProfileCompletion ? (
+              <EditProfilePage mode="completion" onNavigate={navigate} />
+            ) : (
+              <StudentDashboardPage onNavigate={navigate} />
+            )
+          ) : (
+            <AuthPage initialMode="login" onNavigate={navigate} />
+          )}
         </main>
       )}
 
       {route === '/profile/edit' && (
         <main className="flex-1 flex flex-col">
-          <EditProfilePage onNavigate={navigate} />
+          {isSuperAdmin ? (
+            <AdminDashboardPage onNavigate={navigate} />
+          ) : studentUser ? (
+            shouldEnforceProfileCompletion ? (
+              <EditProfilePage mode="completion" onNavigate={navigate} />
+            ) : (
+              <EditProfilePage mode="edit" onNavigate={navigate} />
+            )
+          ) : (
+            <AuthPage initialMode="login" onNavigate={navigate} />
+          )}
         </main>
       )}
 
       {(route === '/prototype' || route === '/questionnaire') && (
         <main className="flex-1 flex flex-col">
-          <QuestionnairePage onNavigate={navigate} />
+          {studentUser && shouldEnforceProfileCompletion ? (
+            <EditProfilePage mode="completion" onNavigate={navigate} />
+          ) : (
+            <QuestionnairePage onNavigate={navigate} />
+          )}
         </main>
       )}
 
@@ -156,8 +250,37 @@ export default function App() {
 
       {(route === '/admin' || route === '/admin/login') && (
         <main className="flex-1 flex flex-col">
-          {adminUser || isSuperAdmin ? (
+          {isSuperAdmin ? (
             <AdminDashboardPage onNavigate={navigate} />
+          ) : studentUser ? (
+            <div className="min-h-screen bg-[#F4F8FD] flex flex-col items-center justify-center p-4 sm:p-6 text-[#102C46]">
+              <div className="max-w-md w-full bg-white rounded-3xl p-6 sm:p-8 border border-red-100 shadow-xl text-center">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mb-5">
+                  <ShieldAlert className="w-7 h-7" />
+                </div>
+                <h1 className="text-xl font-bold text-[#062B50] mb-2">Access Restricted</h1>
+                <p className="text-xs sm:text-sm text-[#5A6E85] mb-6 leading-relaxed">
+                  You are signed in as a student (<span className="font-semibold text-[#102C46]">{studentUser.email || studentUser.fullName}</span>). The Admin Portal is strictly restricted to the designated institution administrator.
+                </p>
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={() => navigate(isProfileDone ? '/dashboard' : '/complete-profile')}
+                    className="w-full py-2.5 px-4 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-sm font-semibold transition cursor-pointer"
+                  >
+                    Return to {isProfileDone ? 'Student Dashboard' : 'Profile Completion'}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await logoutStudent();
+                      navigate('/admin/login');
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl border border-[#D5E4F3] text-sm text-[#64778C] hover:text-[#062B50] font-medium transition cursor-pointer"
+                  >
+                    Sign Out &amp; Switch Account
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : (
             <AdminLoginPage
               onNavigate={navigate}
@@ -170,7 +293,8 @@ export default function App() {
         </main>
       )}
 
-      {route !== '/dashboard' &&
+      {route !== '/complete-profile' &&
+        route !== '/dashboard' &&
         route !== '/profile/edit' &&
         route !== '/login' &&
         route !== '/signup' &&

@@ -282,9 +282,13 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
   }
 
   const studentDisplayName = student?.fullName || 'Student';
-  const studentSchool = student?.schoolName || 'Enrolled School';
-  const studentClass = student?.classGrade ? `Class ${student.classGrade}` : 'Class 10';
-  const studentAge = student?.age || '15';
+  const studentSchool = student?.schoolName || '—';
+  const studentClass = student?.classGrade
+    ? student.classGrade === 'Others'
+      ? 'Others'
+      : `Class ${student.classGrade}`
+    : '—';
+  const studentAge = student?.age || '—';
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#F2F7FC]/80 via-white to-[#F4F8FD] text-[#102C46]">

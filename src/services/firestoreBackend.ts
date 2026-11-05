@@ -20,7 +20,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { LocalStudentAccount } from './localAuth';
+import type { LocalStudentAccount } from './firebaseAuth';
 import type { StudentAnswers, SubmissionData, DraftData } from './api';
 import {
   SECTIONS as DEFAULT_SECTIONS,
@@ -43,47 +43,164 @@ const DEFAULT_QUESTIONNAIRE_DOC_ID = 'default_v1';
    ========================================================================= */
 
 /**
- * Saves a student profile into the Firestore `students` collection.
+ * Exact generated placeholder school names that must never be treated as valid profile data.
  */
-export async function saveStudentProfileToBackend(student: LocalStudentAccount): Promise<boolean> {
-  try {
-    const studentRef = doc(db, COLLECTION_STUDENTS, student.id);
-    const payload = {
-      id: student.id,
-      fullName: student.fullName,
-      age: student.age || '',
-      classGrade: student.classGrade,
-      schoolName: student.schoolName,
-      email: student.email,
-      phone: student.phone || '',
-      completedReflections: student.completedReflections ?? 0,
-      totalReflections: student.totalReflections ?? 13,
-      badge: student.badge || `Class ${student.classGrade} Student`,
-      createdAt: student.createdAt || new Date().toISOString(),
-      lastLoginAt: student.lastLoginAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    await setDoc(studentRef, payload, { merge: true });
-    return true;
-  } catch (err) {
-    console.warn('[Firestore Backend] Could not save student profile to cloud:', err);
+export const KNOWN_PLACEHOLDER_SCHOOLS = [
+  'enrolled institution',
+  'general institute',
+  'enrolled school',
+  'institution / school',
+  'institution',
+];
+
+/**
+ * Validates whether a student profile has all mandatory fields complete with genuine, non-placeholder data:
+ * - fullName (non-empty, not generic 'Student')
+ * - email (valid non-empty email)
+ * - age (realistic integer between 8 and 25)
+ * - classGrade (valid grade: 8, 9, 10, 11, 12, or Others)
+ * - schoolName (non-empty, and NOT a generated placeholder)
+ */
+export function isStudentProfileComplete(
+  profile: Partial<LocalStudentAccount> | null | undefined
+): boolean {
+  if (!profile) return false;
+
+  const fullName = (profile.fullName || '').trim();
+  const email = (profile.email || '').trim();
+  const age = (profile.age || '').trim();
+  const classGrade = (profile.classGrade || '').trim();
+  const schoolName = (profile.schoolName || '').trim();
+
+  if (!fullName || fullName.toLowerCase() === 'student' || fullName.toLowerCase() === 'unnamed student') {
     return false;
+  }
+  if (!email) {
+    return false;
+  }
+  if (!age) {
+    return false;
+  }
+  const ageNum = parseInt(age, 10);
+  if (isNaN(ageNum) || ageNum < 8 || ageNum > 25) {
+    return false;
+  }
+  if (!classGrade) {
+    return false;
+  }
+  if (!schoolName) {
+    return false;
+  }
+  if (KNOWN_PLACEHOLDER_SCHOOLS.includes(schoolName.toLowerCase())) {
+    return false;
+  }
+
+  return true;
+}
+
+export type ProfileFetchOutcome =
+  | { type: 'found'; profile: LocalStudentAccount }
+  | { type: 'not_found' }
+  | { type: 'error'; code: string; message: string };
+
+export type ProfileSaveOutcome =
+  | { success: true; profile: LocalStudentAccount }
+  | { success: false; code: string; message: string };
+
+/**
+ * Fetches a student profile from Firestore, clearly distinguishing between:
+ * 1. Document genuinely does not exist (`not_found`)
+ * 2. Document found (`found`)
+ * 3. Database error or permission denied (`error`)
+ */
+export async function fetchStudentProfileOutcome(studentId: string): Promise<ProfileFetchOutcome> {
+  if (!studentId) {
+    return { type: 'not_found' };
+  }
+  try {
+    const studentRef = doc(db, COLLECTION_STUDENTS, studentId);
+    const snap = await getDoc(studentRef);
+    if (!snap.exists()) {
+      return { type: 'not_found' };
+    }
+    const data = snap.data();
+    const profile: LocalStudentAccount = {
+      id: studentId,
+      fullName: data.fullName || '',
+      email: data.email || '',
+      age: data.age || '',
+      classGrade: data.classGrade || '',
+      schoolName: data.schoolName || '',
+      phone: data.phone || '',
+      completedReflections: data.completedReflections ?? 0,
+      totalReflections: data.totalReflections ?? 13,
+      badge: data.badge || (data.classGrade ? `Class ${data.classGrade} Student` : 'Student'),
+      createdAt: data.createdAt || new Date().toISOString(),
+      lastLoginAt: data.lastLoginAt || new Date().toISOString(),
+    };
+    return { type: 'found', profile };
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code || 'unknown-error';
+    const message = (err as { message?: string })?.message || String(err);
+    console.error(`[Firestore Backend] Profile fetch failed for ${studentId} (${code}):`, message);
+    return { type: 'error', code, message };
   }
 }
 
 /**
- * Loads a student profile by ID from Firestore.
+ * Saves a student profile into Firestore, returning clear error status if rejected by rules or network.
+ */
+export async function saveStudentProfileOutcome(
+  student: LocalStudentAccount
+): Promise<ProfileSaveOutcome> {
+  if (!student || !student.id) {
+    return { success: false, code: 'invalid-id', message: 'Invalid student ID.' };
+  }
+  try {
+    const studentRef = doc(db, COLLECTION_STUDENTS, student.id);
+    const cleanClass = student.classGrade ? student.classGrade.trim() : '';
+    const payload = {
+      id: student.id,
+      fullName: (student.fullName || '').trim(),
+      email: (student.email || '').trim().toLowerCase(),
+      age: (student.age || '').trim(),
+      classGrade: cleanClass,
+      schoolName: (student.schoolName || '').trim(),
+      phone: student.phone || '',
+      completedReflections: student.completedReflections ?? 0,
+      totalReflections: student.totalReflections ?? 13,
+      badge: cleanClass === 'Others' ? 'Student' : cleanClass ? `Class ${cleanClass} Student` : 'Student',
+      createdAt: student.createdAt || new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(studentRef, payload, { merge: true });
+    return { success: true, profile: { ...student, ...payload } };
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code || 'unknown-error';
+    const message = (err as { message?: string })?.message || String(err);
+    console.error(`[Firestore Backend] Profile save failed for ${student.id} (${code}):`, message);
+    return { success: false, code, message };
+  }
+}
+
+/**
+ * Backward-compatible helper: saves student profile into Firestore.
+ */
+export async function saveStudentProfileToBackend(student: LocalStudentAccount): Promise<boolean> {
+  const result = await saveStudentProfileOutcome(student);
+  return result.success;
+}
+
+/**
+ * Backward-compatible helper: loads student profile by ID from Firestore.
  */
 export async function getStudentProfileFromBackend(studentId: string): Promise<LocalStudentAccount | null> {
-  try {
-    const studentRef = doc(db, COLLECTION_STUDENTS, studentId);
-    const snap = await getDoc(studentRef);
-    if (!snap.exists()) return null;
-    return snap.data() as LocalStudentAccount;
-  } catch (err) {
-    console.warn('[Firestore Backend] Could not load student profile from cloud:', err);
-    return null;
+  const result = await fetchStudentProfileOutcome(studentId);
+  if (result.type === 'found') {
+    return result.profile;
   }
+  return null;
 }
 
 /**

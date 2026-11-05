@@ -4,6 +4,11 @@ import {
   onLocalAuthChange,
   LocalStudentAccount,
 } from '../services/localAuth';
+import {
+  onAdminAuthChange,
+  AdminAccount,
+  DESIGNATED_ADMIN_UID,
+} from '../services/adminService';
 
 interface NavigationProps {
   onNavigate: (route: string) => void;
@@ -12,15 +17,22 @@ interface NavigationProps {
 
 export const Navigation: React.FC<NavigationProps> = ({ onNavigate, currentRoute = '/' }) => {
   const [activeStudent, setActiveStudent] = useState<LocalStudentAccount | null>(null);
+  const [activeAdmin, setActiveAdmin] = useState<AdminAccount | null>(null);
 
   useEffect(() => {
     const unsubStudent = onLocalAuthChange((student) => {
       setActiveStudent(student);
     });
+    const unsubAdmin = onAdminAuthChange((admin) => {
+      setActiveAdmin(admin);
+    });
     return () => {
       unsubStudent();
+      unsubAdmin();
     };
   }, []);
+
+  const isAdmin = Boolean(activeAdmin && activeAdmin.id === DESIGNATED_ADMIN_UID);
 
   return (
     <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-[#E8F3FF] transition-colors">
@@ -37,11 +49,11 @@ export const Navigation: React.FC<NavigationProps> = ({ onNavigate, currentRoute
         {/* Action Zone */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <button
-            onClick={() => onNavigate(activeStudent ? '/dashboard' : '/login')}
+            onClick={() => onNavigate(isAdmin ? '/admin' : activeStudent ? '/dashboard' : '/login')}
             type="button"
             className="inline-flex items-center justify-center min-h-[38px] sm:min-h-[42px] px-4 sm:px-5 py-2 text-xs sm:text-sm font-bold text-white bg-[#0866C6] hover:bg-[#062B50] rounded-xl transition-all shadow-xs active:scale-[0.98] cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0866C6] whitespace-nowrap"
           >
-            {activeStudent ? 'Dashboard' : 'Sign in'}
+            {isAdmin ? 'Admin Portal' : activeStudent ? 'Dashboard' : 'Sign in'}
           </button>
         </div>
       </div>

@@ -10,40 +10,101 @@ import {
   AlertCircle,
   Save,
   ShieldCheck,
+  LogOut,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
+import { SchoolAutocompleteInput } from '../components/SchoolAutocompleteInput';
 import {
   getCurrentStudent,
+  onLocalAuthChange,
   updateStudentProfile,
+  completeStudentProfile,
+  isStudentProfileComplete,
+  logoutStudent,
   LocalStudentAccount,
+  KNOWN_PLACEHOLDER_SCHOOLS,
 } from '../services/localAuth';
+import { auth } from '../services/firebase';
 
 interface EditProfilePageProps {
   onNavigate: (route: string) => void;
+  mode?: 'completion' | 'edit';
 }
 
 const CLASS_OPTIONS = ['8', '9', '10', '11', '12', 'Others'];
 
-export const EditProfilePage: React.FC<EditProfilePageProps> = ({ onNavigate }) => {
+export const EditProfilePage: React.FC<EditProfilePageProps> = ({
+  onNavigate,
+  mode: propMode,
+}) => {
   const [student, setStudent] = useState<LocalStudentAccount | null>(() => getCurrentStudent());
 
+  // Determine if this screen is completing a new/incomplete profile or editing an already completed profile
+  const isComplete = isStudentProfileComplete(student);
+  const isCompletionMode = propMode ? propMode === 'completion' : !isComplete;
+
+  const [fullName, setFullName] = useState<string>('');
   const [age, setAge] = useState<string>('');
-  const [classGrade, setClassGrade] = useState<string>('10');
+  const [classGrade, setClassGrade] = useState<string>('');
+  const [schoolName, setSchoolName] = useState<string>('');
+
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isSigningOut, setIsSigningOut] = useState<boolean>(false);
 
   useEffect(() => {
-    if (student) {
-      setAge(student.age || '');
-      setClassGrade(student.classGrade || '10');
+    const unsub = onLocalAuthChange((curr) => {
+      setStudent(curr);
+    });
+    return () => unsub();
+  }, []);
+
+  // Hydrate fields from authenticated session
+  useEffect(() => {
+    const authUser = auth.currentUser;
+    const initialName = student?.fullName || authUser?.displayName || '';
+    setFullName(initialName);
+
+    const initialAge = student?.age || '';
+    setAge(initialAge);
+
+    const initialClass = student?.classGrade || '';
+    setClassGrade(initialClass);
+
+    // If schoolName is one of the old generated placeholders, clean it so the student supplies their real school
+    const currentSchool = student?.schoolName || '';
+    if (KNOWN_PLACEHOLDER_SCHOOLS.includes(currentSchool.toLowerCase().trim())) {
+      setSchoolName('');
+    } else {
+      setSchoolName(currentSchool);
     }
   }, [student]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    try {
+      await logoutStudent();
+      onNavigate('/login');
+    } catch {
+      onNavigate('/login');
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
+
+    const cleanName = fullName.trim();
+    if (!cleanName) {
+      setErrorMessage('Please enter your full name.');
+      return;
+    }
 
     const cleanAge = age.trim();
     if (!cleanAge) {
@@ -53,56 +114,95 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ onNavigate }) 
 
     const ageNum = parseInt(cleanAge, 10);
     if (isNaN(ageNum) || ageNum < 8 || ageNum > 25) {
-      setErrorMessage('Please enter a realistic age between 8 and 25.');
+      setErrorMessage('Please enter a realistic age between 8 and 25 years.');
       return;
     }
 
     if (!classGrade) {
-      setErrorMessage('Please select your class.');
+      setErrorMessage('Please select your current class.');
       return;
+    }
+
+    const cleanSchool = schoolName.trim();
+    if (isCompletionMode) {
+      if (!cleanSchool) {
+        setErrorMessage('Please enter or select your School / Institution Name.');
+        return;
+      }
+      if (KNOWN_PLACEHOLDER_SCHOOLS.includes(cleanSchool.toLowerCase())) {
+        setErrorMessage('Please enter your actual School / Institution Name.');
+        return;
+      }
     }
 
     setIsSubmitting(true);
 
     try {
-      const res = updateStudentProfile({
-        age: cleanAge,
-        classGrade,
-      });
+      if (isCompletionMode) {
+        // Complete initial profile and persist directly to Firestore
+        const res = await completeStudentProfile({
+          fullName: cleanName,
+          age: cleanAge,
+          classGrade,
+          schoolName: cleanSchool,
+        });
 
-      if (res.success && res.student) {
-        setStudent(res.student);
-        setSuccessMessage('Your profile has been successfully updated! Returning to your dashboard...');
-        setTimeout(() => {
-          onNavigate('/dashboard');
-        }, 1200);
+        if (res.success && res.student) {
+          setStudent(res.student);
+          setSuccessMessage('Profile completed successfully! Opening your student dashboard...');
+          setTimeout(() => {
+            onNavigate('/dashboard');
+          }, 800);
+        } else {
+          setErrorMessage(
+            res.error ||
+              'Failed to save your profile to the database. Please check your connection or contact administrator.'
+          );
+        }
       } else {
-        setErrorMessage(res.error || 'Failed to update profile. Please try again.');
+        // Edit existing profile (age & class only)
+        const res = await updateStudentProfile({
+          age: cleanAge,
+          classGrade,
+        });
+
+        if (res.success && res.student) {
+          setStudent(res.student);
+          setSuccessMessage('Your profile has been updated! Returning to your dashboard...');
+          setTimeout(() => {
+            onNavigate('/dashboard');
+          }, 900);
+        } else {
+          setErrorMessage(res.error || 'Failed to update profile. Please try again.');
+        }
       }
     } catch {
-      setErrorMessage('An unexpected error occurred while saving.');
+      setErrorMessage('An unexpected error occurred while saving your profile.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (!student) {
+  const authEmail = student?.email || auth.currentUser?.email || '';
+
+  // If no authenticated user exists, invite them to sign in
+  if (!student && !auth.currentUser) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#F2F7FC]/80 via-white to-[#F4F8FD] flex flex-col justify-center items-center p-6 text-[#102C46]">
         <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-[#E8F3FF] shadow-lg text-center space-y-4">
           <div className="w-12 h-12 rounded-2xl bg-[#EBF4FE] text-[#0866C6] flex items-center justify-center mx-auto">
             <User className="w-6 h-6" />
           </div>
-          <h2 className="text-xl font-bold text-[#062B50]">No Student Account Found</h2>
+          <h2 className="text-xl font-bold text-[#062B50]">Sign In Required</h2>
           <p className="text-sm text-[#5A6E85]">
-            Please sign in or complete About Me (Part 1) to edit your profile.
+            Please sign in to access or complete your student profile.
           </p>
           <button
             type="button"
-            onClick={() => onNavigate('/dashboard')}
-            className="w-full py-3 rounded-xl bg-[#0866C6] text-white font-bold text-sm hover:bg-[#062B50] transition-colors"
+            onClick={() => onNavigate('/login')}
+            className="w-full py-3 rounded-xl bg-[#0866C6] text-white font-bold text-sm hover:bg-[#062B50] transition-colors cursor-pointer"
           >
-            Go to Dashboard
+            Go to Sign In
           </button>
         </div>
       </div>
@@ -115,21 +215,33 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ onNavigate }) 
       <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-[#E8F3FF] transition-colors">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
           <button
-            onClick={() => onNavigate('/dashboard')}
+            onClick={() => (isCompletionMode ? onNavigate('/') : onNavigate('/dashboard'))}
             className="flex items-center text-left focus-visible:outline-2 focus-visible:outline-[#0866C6] rounded-lg cursor-pointer"
-            aria-label="DeRote Student Insight - Return to Dashboard"
+            aria-label="DeRote Student Insight - Home"
           >
             <DeRoteWordmark showDescriptor={false} size="sm" />
           </button>
 
-          <button
-            type="button"
-            onClick={() => onNavigate('/dashboard')}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-[#E2EDF8] bg-white hover:bg-[#F2F7FC] text-xs font-bold text-[#062B50] hover:text-[#0866C6] transition-colors cursor-pointer"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Dashboard</span>
-          </button>
+          {isCompletionMode ? (
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={isSigningOut}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-[#E2EDF8] bg-white hover:bg-[#F2F7FC] text-xs font-bold text-[#64778C] hover:text-[#062B50] transition-colors cursor-pointer disabled:opacity-60"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>{isSigningOut ? 'Signing out...' : 'Sign Out'}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onNavigate('/dashboard')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-[#E2EDF8] bg-white hover:bg-[#F2F7FC] text-xs font-bold text-[#062B50] hover:text-[#0866C6] transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Dashboard</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -139,14 +251,16 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ onNavigate }) 
           {/* Header Title */}
           <div className="border-b border-[#E8F3FF] pb-5">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#EBF4FE] text-[#0866C6] text-xs font-bold mb-2">
-              <User className="w-3.5 h-3.5" />
-              <span>Personal Student Settings</span>
+              {isCompletionMode ? <Sparkles className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
+              <span>{isCompletionMode ? 'Required Student Onboarding' : 'Personal Student Settings'}</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight">
-              Edit Profile
+              {isCompletionMode ? 'Complete Your Student Profile' : 'Edit Profile'}
             </h1>
             <p className="text-xs sm:text-sm text-[#5A6E85] mt-1.5 leading-relaxed">
-              You can update your age and class grade below. Your name and school remain locked according to enrollment verification.
+              {isCompletionMode
+                ? 'Welcome to DeRote! Please enter your age, class, and school to activate your student dashboard and start your self-discovery reflections.'
+                : 'You can update your age and class grade below. Your name and school remain locked according to enrollment verification.'}
             </p>
           </div>
 
@@ -159,65 +273,137 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ onNavigate }) 
           )}
 
           {errorMessage && (
-            <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm flex items-center gap-2.5 animate-in fade-in duration-200">
-              <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
-              <p className="font-semibold">{errorMessage}</p>
+            <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm flex items-start gap-2.5 animate-in fade-in duration-200">
+              <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+              <p className="font-semibold leading-relaxed">{errorMessage}</p>
             </div>
           )}
 
-          {/* Edit Form */}
+          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Field 1: Full Name (LOCKED) */}
+            {/* Field 1: Full Name */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs sm:text-sm font-bold text-[#062B50] flex items-center gap-2">
+                <label
+                  htmlFor="student-fullname-input"
+                  className="text-xs sm:text-sm font-bold text-[#062B50] flex items-center gap-2"
+                >
                   <User className="w-4 h-4 text-[#0866C6]" />
                   <span>Student Full Name</span>
                 </label>
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8EA3B8] bg-[#F2F5F8] px-2 py-0.5 rounded-md">
-                  <Lock className="w-3 h-3 text-[#8EA3B8]" />
-                  <span>Cannot be edited</span>
-                </span>
+                {isCompletionMode ? (
+                  <span className="text-[11px] font-bold text-[#0866C6] bg-[#EBF4FE] px-2 py-0.5 rounded-md">
+                    Required
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8EA3B8] bg-[#F2F5F8] px-2 py-0.5 rounded-md">
+                    <Lock className="w-3 h-3 text-[#8EA3B8]" />
+                    <span>Cannot be edited</span>
+                  </span>
+                )}
               </div>
-              <input
-                type="text"
-                value={student.fullName}
-                disabled
-                readOnly
-                className="w-full px-4 py-3 rounded-xl border border-[#E2EDF8] bg-[#F7FAFD] text-[#64778C] font-semibold text-sm sm:text-base cursor-not-allowed select-none"
-              />
+
+              {isCompletionMode ? (
+                <input
+                  id="student-fullname-input"
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="e.g. Maya Sharma"
+                  className="w-full px-4 py-3 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] font-semibold text-sm sm:text-base focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
+                  required
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={student?.fullName || fullName}
+                  disabled
+                  readOnly
+                  className="w-full px-4 py-3 rounded-xl border border-[#E2EDF8] bg-[#F7FAFD] text-[#64778C] font-semibold text-sm sm:text-base cursor-not-allowed select-none"
+                />
+              )}
               <p className="text-[11px] text-[#8EA3B8] flex items-center gap-1.5 pl-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#0866C6]" />
-                <span>Name is permanently recorded for your academic verification records.</span>
+                <span>
+                  {isCompletionMode
+                    ? 'Name is verified and saved to your permanent academic record.'
+                    : 'Name is permanently recorded for your academic verification records.'}
+                </span>
               </p>
             </div>
 
-            {/* Field 2: School and Institution (LOCKED) */}
+            {/* Field 2: Email (Account-bound, Read-only) */}
+            {authEmail && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs sm:text-sm font-bold text-[#062B50] flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-[#0866C6]" />
+                    <span>Registered Email Address</span>
+                  </label>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8EA3B8] bg-[#F2F5F8] px-2 py-0.5 rounded-md">
+                    <Lock className="w-3 h-3 text-[#8EA3B8]" />
+                    <span>Account Identifier</span>
+                  </span>
+                </div>
+                <input
+                  type="email"
+                  value={authEmail}
+                  disabled
+                  readOnly
+                  className="w-full px-4 py-3 rounded-xl border border-[#E2EDF8] bg-[#F7FAFD] text-[#64778C] font-semibold text-sm sm:text-base cursor-not-allowed select-none"
+                />
+              </div>
+            )}
+
+            {/* Field 3: School / Institution Name */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs sm:text-sm font-bold text-[#062B50] flex items-center gap-2">
+                <label
+                  htmlFor="school-autocomplete-input"
+                  className="text-xs sm:text-sm font-bold text-[#062B50] flex items-center gap-2"
+                >
                   <School className="w-4 h-4 text-[#0866C6]" />
-                  <span>School / Institution</span>
+                  <span>School / Institution Name</span>
                 </label>
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8EA3B8] bg-[#F2F5F8] px-2 py-0.5 rounded-md">
-                  <Lock className="w-3 h-3 text-[#8EA3B8]" />
-                  <span>Cannot be edited</span>
-                </span>
+                {isCompletionMode ? (
+                  <span className="text-[11px] font-bold text-[#0866C6] bg-[#EBF4FE] px-2 py-0.5 rounded-md">
+                    Required
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8EA3B8] bg-[#F2F5F8] px-2 py-0.5 rounded-md">
+                    <Lock className="w-3 h-3 text-[#8EA3B8]" />
+                    <span>Cannot be edited</span>
+                  </span>
+                )}
               </div>
-              <input
-                type="text"
-                value={student.schoolName}
-                disabled
-                readOnly
-                className="w-full px-4 py-3 rounded-xl border border-[#E2EDF8] bg-[#F7FAFD] text-[#64778C] font-semibold text-sm sm:text-base cursor-not-allowed select-none"
-              />
+
+              {isCompletionMode ? (
+                <SchoolAutocompleteInput
+                  value={schoolName}
+                  onChange={setSchoolName}
+                  placeholder="Start typing school or institution name..."
+                  id="school-autocomplete-input"
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={student?.schoolName || schoolName}
+                  disabled
+                  readOnly
+                  className="w-full px-4 py-3 rounded-xl border border-[#E2EDF8] bg-[#F7FAFD] text-[#64778C] font-semibold text-sm sm:text-base cursor-not-allowed select-none"
+                />
+              )}
               <p className="text-[11px] text-[#8EA3B8] flex items-center gap-1.5 pl-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#0866C6]" />
-                <span>Institution is assigned and fixed by school administrative coordination.</span>
+                <span>
+                  {isCompletionMode
+                    ? 'Select your school from the directory or type the full institution name.'
+                    : 'Institution is fixed by school administrative coordination.'}
+                </span>
               </p>
             </div>
 
-            {/* Field 3: Age (EDITABLE) */}
+            {/* Field 4: Age */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <label
@@ -228,7 +414,7 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ onNavigate }) 
                   <span>Age (in years)</span>
                 </label>
                 <span className="text-[11px] font-bold text-[#0866C6] bg-[#EBF4FE] px-2 py-0.5 rounded-md">
-                  Editable
+                  {isCompletionMode ? 'Required' : 'Editable'}
                 </span>
               </div>
               <input
@@ -243,19 +429,19 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ onNavigate }) 
                 required
               />
               <p className="text-[11px] text-[#5A6E85] pl-1">
-                Enter your current age to keep your student profile accurate.
+                Enter your current age between 8 and 25 years.
               </p>
             </div>
 
-            {/* Field 4: Class (EDITABLE) */}
+            {/* Field 5: Class Grade */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs sm:text-sm font-bold text-[#062B50] flex items-center gap-2">
                   <BookOpen className="w-4 h-4 text-[#0866C6]" />
-                  <span>Class / Grade</span>
+                  <span>Current Class / Grade</span>
                 </label>
                 <span className="text-[11px] font-bold text-[#0866C6] bg-[#EBF4FE] px-2 py-0.5 rounded-md">
-                  Editable
+                  {isCompletionMode ? 'Required' : 'Editable'}
                 </span>
               </div>
 
@@ -288,30 +474,53 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ onNavigate }) 
             <div className="p-4 sm:p-5 rounded-2xl bg-[#EBF4FE] border border-[#D5E4F3] text-xs sm:text-sm text-[#062B50] space-y-1">
               <div className="font-bold flex items-center gap-1.5 text-[#0866C6]">
                 <ShieldCheck className="w-4 h-4" />
-                <span>Submitted Answers Are Safe</span>
+                <span>{isCompletionMode ? 'Safe & Private Profile' : 'Submitted Answers Are Safe'}</span>
               </div>
               <p className="text-[#5A6E85] leading-relaxed">
-                Updating your age or class will immediately update your dashboard view. It will <strong>never change, overwrite, or delete</strong> any answers you previously submitted in the questionnaire.
+                {isCompletionMode
+                  ? 'Your profile information is saved securely to your private DeRote student account. Dashboard access is activated immediately once confirmed.'
+                  : 'Updating your age or class will immediately update your dashboard view. It will never change, overwrite, or delete any answers you previously submitted.'}
               </p>
             </div>
 
             {/* Action Buttons */}
             <div className="pt-3 border-t border-[#E8F3FF] flex flex-col-reverse sm:flex-row items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => onNavigate('/dashboard')}
-                className="w-full sm:w-auto min-h-[46px] px-6 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#062B50] hover:bg-[#F2F7FC] text-xs sm:text-sm font-bold transition-all cursor-pointer"
-              >
-                Cancel &amp; Return
-              </button>
+              {isCompletionMode ? (
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={isSubmitting || isSigningOut}
+                  className="w-full sm:w-auto min-h-[46px] px-6 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#64778C] hover:text-[#062B50] hover:bg-[#F2F7FC] text-xs sm:text-sm font-bold transition-all cursor-pointer"
+                >
+                  Sign Out
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/dashboard')}
+                  disabled={isSubmitting}
+                  className="w-full sm:w-auto min-h-[46px] px-6 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#062B50] hover:bg-[#F2F7FC] text-xs sm:text-sm font-bold transition-all cursor-pointer"
+                >
+                  Cancel &amp; Return
+                </button>
+              )}
 
               <button
                 type="submit"
                 disabled={isSubmitting}
                 className="w-full sm:w-auto min-h-[46px] px-8 py-2.5 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs sm:text-sm font-bold transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] cursor-pointer inline-flex items-center justify-center gap-2 disabled:opacity-60"
               >
-                <Save className="w-4 h-4" />
-                <span>{isSubmitting ? 'Saving Profile...' : 'Save Changes'}</span>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Saving to DeRote cloud...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>{isCompletionMode ? 'Save Profile & Enter Dashboard' : 'Save Changes'}</span>
+                  </>
+                )}
               </button>
             </div>
           </form>
