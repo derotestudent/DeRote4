@@ -44,250 +44,11 @@ const STORAGE_PREFIX_DRAFT = 'derote_questionnaire_draft_';
 const GLOBAL_SUBMISSION_KEY = 'derote_student_questionnaire_submission';
 const GLOBAL_DRAFT_KEY = 'derote_student_questionnaire_draft';
 
-// Sample answers for demo students to demonstrate complete records, incomplete responses, and not-started status
-const DEMO_ANSWERS_AARAV: Record<number, string | string[]> = {
-  1: 'Aarav Sharma',
-  2: '15',
-  3: '10',
-  4: 'Delhi Public School, R.K. Puram',
-  5: 'Curious, analytical, observant',
-  6: 'Building hobby coding projects and playing badminton',
-  7: 'I sometimes worry more about future expectations than I let people see.',
-  8: 'I like some subjects more than others',
-  9: 'Physics and Computer Science, because understanding how systems work and solving logic puzzles feels natural and engaging.',
-  10: ['Social science'],
-  11: ['Remembering facts or steps', 'Writing answers clearly'],
-  12: ['Examples from real life', 'Solving questions by myself', 'Teacher explanation'],
-  13: ['Look it up online / in a book', 'Ask a friend'],
-  14: ['Disappointed but ready to try again', 'I feel I did not work effectively'],
-  15: '1–2 hours',
-  16: ['Mostly in the evening', 'At a regular time'],
-  17: 'A few times a week',
-  18: ['Mobile / social media', 'Noise / lack of space'],
-  19: ['I plan it and start later'],
-  20: ['I know the material but feel nervous'],
-  21: 'I sit down at my desk around 7:30 PM. Doing problem sets first works well, but memorizing long dates is difficult without visual summaries.',
-  22: 'Sometimes',
-  23: ['My own expectations', 'Exams and marks', 'Competition with others'],
-  24: ['Listen to music', 'Spend time alone', 'Talk to a friend'],
-  25: ['I prefer not to burden others', 'I feel others might not understand'],
-  26: 'Sometimes',
-  27: 'I prefer not to answer',
-  28: 'To stay grounded and remind myself that one exam does not define my future.',
-  29: 'Logical thinking, structuring tasks, and helping classmates debug code.',
-  30: ['Coding and technology', 'Reading / writing', 'Sports / fitness'],
-  31: ['Creating something of my own', 'Solving a difficult challenge', 'Learning something new'],
-  32: 'Yes, I can focus deeply for about an hour when the challenge is genuine.',
-  33: 'A lightweight study-group organizing tool for classmates.',
-  34: ['Curiosity to understand things', 'Wanting to build a good future'],
-  35: ['With effort and better methods, I can improve'],
-  36: ['I analyze what went wrong and try differently'],
-  37: ['When I see genuine improvement', 'When a teacher gives constructive feedback'],
-  38: ['Fear of failure', 'Feeling that the work is not meaningful'],
-  39: '2–3 hours',
-  40: ['Schoolwork or learning', 'Watching videos / series', 'Texting friends'],
-  41: ['It helps me discover interesting ideas', 'It sometimes distracts me from sleep'],
-  42: 'Yes, I occasionally compare myself with achievements shared online.',
-  43: ['No, it does not bother me'],
-  44: 'Placing my phone in another room while solving mathematics problems.',
-  45: ['Supported and cared for', 'Expected to do well academically'],
-  46: ['Sometimes'],
-  47: ['Studies and career choices'],
-  48: ['They encourage me to try my best'],
-  49: ['Academic performance', 'Screen time'],
-  50: 'A calm environment with quiet hours for study and open conversation during meals.',
-  51: ['A small group of close friends'],
-  52: ['I can be myself around them', 'We share common interests'],
-  53: ['Rarely'],
-  54: ['Listening when they are down', 'Explaining difficult concepts patiently'],
-  55: 'To study computer systems and design software tools that benefit education.',
-  56: ['Having fulfilling work', 'Being able to support my family', 'Continuing to learn throughout life'],
-  57: ['Not getting into the course I hope for', 'Losing time for personal hobbies'],
-  58: ['Guidance on emerging tech careers', 'Learning how to manage stress better'],
-  59: 'To stay curious, honest, and persistent through challenges.',
-  60: ['Falling behind my peers', 'Disappointing people who believe in me'],
-  61: ['Focusing on small daily habits', 'Taking deep breaths'],
-  62: 'Transitioning to Class 11 with greater focus and balance.',
-  63: 'That high test scores are not the only measure of a student’s dedication or creativity.',
-  64: 'I appreciate having a quiet space to express how I think without being graded.',
-};
 
-const DEMO_ANSWERS_ROHAN: Record<number, string | string[]> = {
-  1: 'Rohan Verma',
-  2: '16',
-  3: '10',
-  4: 'Sanskriti School, Chanakyapuri',
-  5: 'Determined, quiet, empathetic',
-  6: 'Reading history and drawing diagrams',
-  7: 'I remember small details that people often overlook.',
-  8: 'I enjoy learning new things',
-  9: 'History and Environmental Science, because they explain human decisions and our planet.',
-  10: ['Mathematics'],
-  11: ['Solving problems quickly', 'Remembering facts or steps'],
-  12: ['Pictures, diagrams or videos', 'Reading by myself', 'Examples from real life'],
-  13: ['Look it up online / in a book', 'Try again later'],
-  14: ['Disappointed but ready to try again'],
-  15: '2–3 hours',
-  16: ['Early in the morning', 'At a regular time'],
-  17: 'Almost every day',
-  18: ['Tiredness or lack of sleep'],
-  19: ['I start soon'],
-  20: ['I know the material but feel nervous'],
-  21: 'I wake up at 5:30 AM to read theory while my mind is clear. Evening time is for writing practice.',
-  22: 'Rarely',
-  23: ['My own expectations'],
-  24: ['Spend time alone', 'Listen to music'],
-  25: ['I prefer not to burden others'],
-  26: 'Rarely',
-  27: 'No subject in particular',
-  28: 'To trust my early morning preparation.',
-  29: 'Consistency, neat note-making, and patience.',
-  30: ['Reading / writing', 'Art / design'],
-  31: ['Completing a long project thoroughly'],
-  32: 'Yes, when reading historical biographies.',
-  33: 'An illustrated guide to medieval Delhi monuments.',
-  34: ['Wanting to build a good future', 'Curiosity to understand things'],
-  35: ['With effort and better methods, I can improve'],
-  36: ['I analyze what went wrong and try differently'],
-  37: ['When I see genuine improvement'],
-  38: ['Tiredness / lack of sleep'],
-  39: '1–2 hours',
-  40: ['Schoolwork or learning', 'Reading articles'],
-  41: ['It helps me learn things quickly'],
-  42: 'Rarely',
-  43: ['No, it does not bother me'],
-  44: 'No screens allowed during early morning study.',
-  45: ['Supported and cared for'],
-  46: ['Never'],
-  47: ['Studies and career choices'],
-  48: ['They encourage me to try my best'],
-  49: ['Sleep schedule'],
-  50: 'Mutual respect and peaceful quiet.',
-  51: ['A small group of close friends'],
-  52: ['They respect my quiet nature'],
-  53: ['Rarely'],
-  54: ['Being dependable and calm'],
-  55: 'To pursue historical research and heritage preservation.',
-  56: ['Doing meaningful work', 'Peace of mind'],
-  57: ['Burnout before board exams'],
-  58: ['Guidance on humanities research careers'],
-  59: 'To be known as someone steady and trustworthy.',
-  60: ['Falling behind schedule'],
-  61: ['Making a structured checklist'],
-  62: 'Maintaining my sleep schedule during pre-board exams.',
-  63: 'Quiet students also have deep ambitions.',
-  64: 'The questions felt respectful and thoughtful.',
-};
 
-const DEMO_ANSWERS_MEERA: Record<number, string | string[]> = {
-  1: 'Meera Nair',
-  2: '18',
-  3: '12',
-  4: 'Greenwood High International School',
-  5: 'Driven, articulate, caring',
-  6: 'Debating, playing the violin, and mentoring younger students',
-  7: 'I feel the weight of leadership roles but try to stay optimistic.',
-  8: 'I enjoy learning new things',
-  9: 'Biology and English Literature. Both explore life, emotions, and complexity.',
-  10: ['Physics'],
-  11: ['Solving problems quickly', 'Applying ideas to new questions'],
-  12: ['Discussing with friends', 'Teacher explanation', 'Practical activities'],
-  13: ['Ask the teacher', 'Discuss with friends'],
-  14: ['Disappointed but ready to try again'],
-  15: 'More than 3 hours',
-  16: ['At a regular time', 'Mostly in the evening'],
-  17: 'A few times a week',
-  18: ['Tiredness or lack of sleep', 'Household responsibilities'],
-  19: ['I plan it and start later'],
-  20: ['I feel prepared and calm'],
-  21: 'I balance school labs with entrance exam preparation. Spaced repetition flashcards help immensely.',
-  22: 'Often',
-  23: ['Competitive entrance exams', 'College application deadlines'],
-  24: ['Play violin', 'Talk to a mentor', 'Walk outside'],
-  25: ['I prefer not to burden others'],
-  26: 'Sometimes',
-  27: 'I prefer not to answer',
-  28: 'Remembering that medicine is a long marathon, not a sprint.',
-  29: 'Public speaking, scientific inquiry, and active listening.',
-  30: ['Music', 'Debating / speech', 'Science / research'],
-  31: ['Solving a complex diagnostic case in class'],
-  32: 'Yes, especially during biology laboratory sessions.',
-  33: 'A school peer wellness support initiative.',
-  34: ['Desire to help others in need', 'Curiosity about life sciences'],
-  35: ['Effort and strategic practice lead to mastery'],
-  36: ['I seek feedback from experienced teachers'],
-  37: ['When I help a classmate finally grasp a tough concept'],
-  38: ['Physical exhaustion'],
-  39: '1–2 hours',
-  40: ['Medical lecture recordings', 'Connecting with study group'],
-  41: ['A valuable tool when managed consciously'],
-  42: 'Occasionally',
-  43: ['No, it does not bother me'],
-  44: 'Strict cutoff for screens after 10:30 PM.',
-  45: ['Warmly encouraging and supportive'],
-  46: ['Rarely'],
-  47: ['Choice of medical college'],
-  48: ['They trust my work ethic'],
-  49: ['Taking enough rest'],
-  50: 'Family tea time in the evening.',
-  51: ['Close friends from debate society'],
-  52: ['Honest feedback and mutual growth'],
-  53: ['Rarely'],
-  54: ['Cheering them up before exams'],
-  55: 'To become a dedicated pediatric surgeon.',
-  56: ['Serving underserved communities', 'Lifelong learning'],
-  57: ['Missing clinical training opportunities'],
-  58: ['Mentorship from healthcare professionals'],
-  59: 'Integrity and kindness in all circumstances.',
-  60: ['Letting down my team or patients in the future'],
-  61: ['Mindful breathing and reviewing fundamentals'],
-  62: 'Excelling in Class 12 finals and NEET entrance.',
-  63: 'Students want guidance, not just pressure to top the ranks.',
-  64: 'Clear, well-crafted questions that made me reflect deeply.',
-};
 
-// Partial answers for Diya Patel (In Progress - stopped at Section 4/5)
-const DEMO_ANSWERS_DIYA: Record<number, string | string[]> = {
-  1: 'Diya Patel',
-  2: '14',
-  3: '9',
-  4: "The Mother's International School",
-  5: 'Creative, energetic, friendly',
-  6: 'Sketching comics and practicing gymnastics',
-  7: 'I get distracted easily in quiet rooms and prefer soft background music.',
-  8: 'I like some subjects more than others',
-  9: 'Visual Arts and Biology, because I love illustrating anatomy diagrams.',
-  10: ['Mathematics', 'Physics'],
-  11: ['Understanding the idea', 'Solving problems quickly'],
-  12: ['Pictures, diagrams or videos', 'Experiments / practical activities'],
-  13: ['Ask a friend', 'Look it up online / in a book'],
-  14: ['I feel I did not work effectively', 'Disappointed but ready to try again'],
-  15: '30–60 minutes',
-  16: ['Whenever I get time', 'Mostly in the evening'],
-  17: 'Mainly before tests',
-  18: ['Mobile / social media', 'Games or videos'],
-  19: ['I wait until the deadline is close'],
-  20: ['I know the material but feel nervous'],
-  21: 'I study better with color-coded flashcards, but I struggle to sit still for longer than 30 minutes.',
-};
 
-// Partial answers for Kabir Sen (In Progress - stopped at Section 3)
-const DEMO_ANSWERS_KABIR: Record<number, string | string[]> = {
-  1: 'Kabir Sen',
-  2: '17',
-  3: '11',
-  4: 'DPS International, Saket',
-  5: 'Energetic, practical, curious',
-  6: 'Football and video editing',
-  7: 'I like organizing events more than studying textbooks.',
-  8: 'I mainly study for marks or exams',
-  9: 'Economics and Business Studies, because they deal with real markets and consumer decisions.',
-  10: ['Mathematics'],
-  11: ['Concentrating long enough', 'Solving problems quickly'],
-  12: ['Examples from real life', 'Group activities'],
-  13: ['Ask a friend', 'Look it up online / in a book'],
-  14: ['Disappointed but ready to try again'],
-};
+
 
 /**
  * Normalizes class format for filter matching ('8', '9', '10', '11', '12', 'Others')
@@ -394,8 +155,8 @@ export async function fetchAllStudentsWithStatus(): Promise<AdminStudentRecord[]
       } catch {}
     }
 
-    // 3. If currently logged in student or demo student, check global storage keys
-    if (status === 'Not Started' && (currentStudent?.id === acc.id || acc.id === 'student_demo_01')) {
+    // 3. If currently logged in student, check global storage keys
+    if (status === 'Not Started' && currentStudent?.id === acc.id) {
       try {
         const globalSub = localStorage.getItem(GLOBAL_SUBMISSION_KEY);
         if (globalSub) {
@@ -418,35 +179,6 @@ export async function fetchAllStudentsWithStatus(): Promise<AdminStudentRecord[]
           }
         }
       } catch {}
-    }
-
-    // 4. If no localStorage responses exist yet, resolve from pre-seeded demo records
-    if (Object.keys(answers).length === 0) {
-      if (acc.id === 'student_demo_01') {
-        answers = { ...DEMO_ANSWERS_AARAV };
-        status = 'Submitted';
-        submittedAt = acc.lastLoginAt;
-      } else if (acc.id === 'student_seed_03') {
-        answers = { ...DEMO_ANSWERS_ROHAN };
-        status = 'Submitted';
-        submittedAt = acc.lastLoginAt;
-      } else if (acc.id === 'student_seed_06') {
-        answers = { ...DEMO_ANSWERS_MEERA };
-        status = 'Submitted';
-        submittedAt = acc.lastLoginAt;
-      } else if (acc.id === 'student_seed_02') {
-        answers = { ...DEMO_ANSWERS_DIYA };
-        status = 'In Progress';
-        updatedAt = acc.lastLoginAt;
-      } else if (acc.id === 'student_seed_05') {
-        answers = { ...DEMO_ANSWERS_KABIR };
-        status = 'In Progress';
-        updatedAt = acc.lastLoginAt;
-      } else {
-        // student_seed_04, student_seed_07 or newly registered students without answers
-        answers = {};
-        status = 'Not Started';
-      }
     }
 
     // Always ensure Part 1 questions Q1-Q4 reflect the student's profile info if answers exist
@@ -581,7 +313,7 @@ export async function updateStudentProfileByAdmin(
 
   updateAnswersForStorageKey(`${STORAGE_PREFIX_SUBMISSION}${studentId}`);
   updateAnswersForStorageKey(`${STORAGE_PREFIX_DRAFT}${studentId}`);
-  if (studentId === 'student_demo_01' || current?.id === studentId) {
+  if (current?.id === studentId) {
     updateAnswersForStorageKey(GLOBAL_SUBMISSION_KEY);
     updateAnswersForStorageKey(GLOBAL_DRAFT_KEY);
   }

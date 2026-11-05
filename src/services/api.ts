@@ -252,64 +252,10 @@ export async function getQuestionnaireProgress(): Promise<{
 }
 
 /**
- * Returns the student's submission data, or provides a rich realistic set of
- * answers for demo seed accounts marked as having completed reflections.
+ * Retrieves the student's genuine submission data from local cache or Firestore.
  */
-export async function getOrSeedStudentSubmission(
-  studentName?: string,
-  classGrade?: string,
-  schoolName?: string,
-  age?: string
-): Promise<SubmissionData | null> {
-  const existing = await getSubmissionData();
-  if (existing && existing.answers && Object.keys(existing.answers).length > 0) {
-    return existing;
-  }
-
-  // Generate realistic, student-friendly seed responses for demonstration
-  const seedAnswers: StudentAnswers = {
-    1: studentName || 'Aarav Sharma',
-    2: age || '15',
-    3: classGrade || '10',
-    4: schoolName || 'Delhi Public School, R.K. Puram',
-    5: 'Curious, thoughtful, calm',
-    6: 'Building hobby electronics, sketching comic ideas, and exploring nature trails',
-    7: 'I like taking time to reflect quietly before giving an opinion in a big group',
-    8: 'I enjoy learning new things',
-    9: 'Science and computer applications, because they allow me to solve practical puzzles.',
-    10: ['Mathematics', 'Social science'],
-    11: ['Understanding the idea', 'Applying ideas to new questions'],
-    12: ['Experiments / practical activities', 'Pictures, diagrams or videos'],
-    13: ['Ask a friend', 'Look it up online / in a book'],
-    14: ['Disappointed but ready to try again'],
-    15: '1–2 hours',
-    16: ['At a regular time', 'Mostly in the evening'],
-    17: 'A few times a week',
-    18: ['Tiredness or lack of sleep', 'Mobile / social media'],
-    19: ['I start soon', 'It depends on the task'],
-    20: ['I know the material but feel nervous'],
-  };
-
-  // Populate remaining questions with sensible answers
-  QUESTIONS.forEach((q) => {
-    if (!seedAnswers[q.n]) {
-      if (q.type === 'single') {
-        seedAnswers[q.n] = q.options[0] || 'I relate to this';
-      } else if (q.type === 'multi') {
-        seedAnswers[q.n] = [q.options[0] || 'I relate to this'];
-      } else {
-        seedAnswers[q.n] = 'I appreciate having time to think things through carefully.';
-      }
-    }
-  });
-
-  const generated: SubmissionData = {
-    answers: seedAnswers,
-    version: QUESTIONNAIRE_VERSION,
-    submittedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-  };
-
-  return generated;
+export async function getOrSeedStudentSubmission(): Promise<SubmissionData | null> {
+  return getSubmissionData();
 }
 
 
