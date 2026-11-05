@@ -179,29 +179,16 @@ export async function signOutAdmin(): Promise<void> {
 }
 
 /**
- * Helper to generate a realistic sample completed questionnaire session
+ * Helper to generate an initial empty questionnaire session
  */
-function createSampleCompletedSession(student: LocalStudentAccount): QuestionnaireSession {
-  const now = new Date().toISOString();
-  const answers: Record<string, any> = {};
-
-  // Populate sample answers based on question bank so insight engine works
-  QUESTION_BANK.forEach((q, idx) => {
-    const optId = q.options[idx % q.options.length].id;
-    answers[q.id] = {
-      status: 'answered',
-      selectedOptions: [optId],
-      customText: '',
-    };
-  });
-
+function createEmptySession(student: LocalStudentAccount): QuestionnaireSession {
   return {
     sessionId: `session_${student.id}`,
     studentId: student.id,
     version: 'v1_classes_8_10',
     status: student.completedReflections ? 'submitted' : 'draft',
-    currentQuestionIndex: student.completedReflections ? QUESTION_BANK.length : 3,
-    answers,
+    currentQuestionIndex: 0,
+    answers: {},
     createdAt: student.createdAt,
     updatedAt: student.lastLoginAt,
     submittedAt: student.completedReflections ? student.lastLoginAt : undefined,
@@ -230,7 +217,7 @@ export async function fetchAllStudentAdminRecords(): Promise<StudentAdminRecord[
     }
 
     if (!session) {
-      session = createSampleCompletedSession(student);
+      session = createEmptySession(student);
     }
 
     const answers = session.answers || {};
