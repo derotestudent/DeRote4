@@ -26,7 +26,6 @@ import {
   getStoredRegisteredAccounts,
   saveRegisteredAccounts,
   setStoredStudent,
-  loginStudent as fallbackLocalLogin,
 } from './localAuth';
 
 export interface AuthResult {
@@ -147,7 +146,7 @@ async function syncAndActivateProfile(
 
 /**
  * 1. Sign In with Email and Password
- * Uses Firebase Auth with fallback to demo student records.
+ * Authenticates against Firebase Auth with active student profile sync.
  */
 export async function signInStudentWithEmail(
   email: string,
@@ -171,15 +170,6 @@ export async function signInStudentWithEmail(
     return { success: true, student };
   } catch (fbErr: unknown) {
     const code = (fbErr as { code?: string })?.code;
-
-    // If account not found in Firebase, check local accounts (such as demo student)
-    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
-      const localFallback = await fallbackLocalLogin(cleanEmail, cleanPassword);
-      if (localFallback.success && localFallback.student) {
-        return { success: true, student: localFallback.student };
-      }
-    }
-
     return {
       success: false,
       errorCode: code,

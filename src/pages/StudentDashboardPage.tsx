@@ -35,14 +35,11 @@ import {
   hasSubmitted,
   getSubmissionData,
   getQuestionnaireProgress,
-  resetSubmission,
-  getOrSeedStudentSubmission,
   loadDraft,
   SubmissionData,
   StudentAnswers,
 } from '../services/api';
 import { SECTIONS, QUESTIONS } from '../data/questionnaire';
-import { resetStudentQuestionnaireSession } from '../services/questionnaireService';
 
 interface StudentDashboardPageProps {
   onNavigate: (route: string) => void;
@@ -149,7 +146,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [showSignoutModal, setShowSignoutModal] = useState<boolean>(false);
-  const [showRetakeModal, setShowRetakeModal] = useState<boolean>(false);
 
   // "View My Answers" modal state
   const [showAnswersModal, setShowAnswersModal] = useState<boolean>(false);
@@ -198,19 +194,11 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
         gatheredAnswers = { ...draft.answers };
       }
 
-      if (submitted || (currentAcc && currentAcc.completedReflections > 0)) {
+      if (submitted || (currentAcc && (currentAcc.completedReflections ?? 0) > 0)) {
         setIsCompleted(true);
-        const resolvedSub =
-          sub ||
-          (await getOrSeedStudentSubmission(
-            currentAcc?.fullName,
-            currentAcc?.classGrade,
-            currentAcc?.schoolName,
-            currentAcc?.age
-          ));
-        setSubmissionData(resolvedSub);
-        if (resolvedSub?.answers) {
-          gatheredAnswers = { ...resolvedSub.answers, ...gatheredAnswers };
+        setSubmissionData(sub);
+        if (sub?.answers) {
+          gatheredAnswers = { ...sub.answers, ...gatheredAnswers };
         }
 
         // If student account is missing, create from Part 1 answers
@@ -233,19 +221,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
         }
       }
 
-      // If answers are still sparse for testing/demo, seed them
-      if (Object.keys(gatheredAnswers).length === 0) {
-        const seeded = await getOrSeedStudentSubmission(
-          currentAcc?.fullName,
-          currentAcc?.classGrade,
-          currentAcc?.schoolName,
-          currentAcc?.age
-        );
-        if (seeded?.answers) {
-          gatheredAnswers = seeded.answers;
-        }
-      }
-
       setAllAnswers(gatheredAnswers);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -265,15 +240,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
   const handleOpenAnswersModal = (initialSection = 1) => {
     setActiveAnswersSection(initialSection);
     setShowAnswersModal(true);
-  };
-
-  const handleRetakeConfirm = async () => {
-    if (student) {
-      await resetStudentQuestionnaireSession(student);
-    }
-    await resetSubmission();
-    setShowRetakeModal(false);
-    onNavigate('/questionnaire');
   };
 
   const handleSignoutConfirm = async () => {
@@ -340,16 +306,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Demo Retake option for testing */}
-            <button
-              type="button"
-              onClick={() => setShowRetakeModal(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E2EDF8] bg-white hover:bg-[#F2F7FC] text-xs font-semibold text-[#5A6E85] hover:text-[#0866C6] transition-colors cursor-pointer"
-              title="Demo Retake (for testing)"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-[#5A6E85]" />
-              <span className="hidden md:inline">Demo Retake</span>
-            </button>
 
             <button
               type="button"
@@ -870,43 +826,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                 className="min-h-[40px] px-4 py-2 rounded-xl border border-[#E2EDF8] text-xs font-bold text-[#062B50] hover:bg-[#F4F8FD] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 Next Section
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Demo Retake Modal (Kept for testing) */}
-      {showRetakeModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-white rounded-3xl p-6 sm:p-8 border border-[#CCE3FC] shadow-xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 rounded-2xl bg-[#EBF4FE] text-[#0866C6] flex items-center justify-center mx-auto">
-              <RotateCcw className="w-6 h-6" />
-            </div>
-
-            <div className="text-center space-y-2">
-              <h3 className="text-xl font-extrabold text-[#062B50]">
-                Retake Questionnaire?
-              </h3>
-              <p className="text-xs sm:text-sm text-[#5A6E85] leading-relaxed">
-                This demo reset allows you to test the questionnaire flow from question 1. In the final release, assessment submissions will be permanently recorded.
-              </p>
-            </div>
-
-            <div className="flex flex-col-reverse sm:flex-row items-center gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowRetakeModal(false)}
-                className="w-full sm:w-1/2 min-h-[44px] px-4 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-bold text-[#062B50] hover:bg-[#F2F7FC] transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleRetakeConfirm}
-                className="w-full sm:w-1/2 min-h-[44px] px-4 py-2.5 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs sm:text-sm font-bold transition-all shadow-md shadow-[#0866C6]/20 cursor-pointer"
-              >
-                Reset &amp; Retake
               </button>
             </div>
           </div>

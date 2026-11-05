@@ -312,16 +312,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
           {/* Section Header */}
           <div className="mb-3.5 sm:mb-12 text-center max-w-2xl mx-auto">
             <div className="inline-flex items-center justify-center gap-1.5 sm:gap-2 mb-1 sm:mb-2.5">
-              <h1 className="text-xl sm:text-4xl lg:text-[42px] font-extrabold text-[#062B50] tracking-tight leading-tight">
+              <h1 className="text-2xl sm:text-[44px] lg:text-[50px] font-extrabold text-[#062B50] tracking-tight leading-tight">
                 Ever feel like nobody gets it?
               </h1>
               {/* Playful blue accent marks */}
               <span
-                className="inline-flex items-center gap-0.5 sm:gap-1 text-[#0866C6] -mt-1.5 sm:-mt-3"
+                className="inline-flex items-center gap-0.5 sm:gap-1 text-[#0866C6] -mt-2 sm:-mt-3.5"
                 aria-hidden="true"
               >
-                <span className="w-1 sm:w-1.5 h-2.5 sm:h-4 bg-[#0866C6] rounded-full rotate-[25deg]" />
-                <span className="w-1 sm:w-1.5 h-1 sm:h-2.5 bg-[#0866C6] rounded-full rotate-[25deg]" />
+                <span className="w-1 sm:w-1.5 h-3 sm:h-5 bg-[#0866C6] rounded-full rotate-[25deg]" />
+                <span className="w-1 sm:w-1.5 h-1.5 sm:h-3 bg-[#0866C6] rounded-full rotate-[25deg]" />
               </span>
             </div>
             <p className="text-xs sm:text-lg text-[#5A6E85] leading-relaxed font-normal">

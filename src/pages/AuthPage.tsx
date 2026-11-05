@@ -20,7 +20,6 @@ import {
   signInStudentWithGoogle,
   registerStudentWithEmail,
 } from '../services/firebaseAuth';
-import { loginStudent } from '../services/localAuth';
 
 interface AuthPageProps {
   initialMode?: 'login' | 'signup';
@@ -144,38 +143,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
-  // 3. Demo Student Quick Access
-  const handleDemoStudentLogin = async () => {
-    setIsLoading(true);
-    setStatusMessage(null);
-    setSignInEmail('student@derote.in');
-    setSignInPassword('student123');
-
-    try {
-      const res = await loginStudent('student@derote.in', 'student123');
-      if (res.success) {
-        setStatusMessage({
-          type: 'success',
-          text: 'Welcome Aarav! Logged in with Demo Student account.',
-        });
-        handleRedirect();
-      } else {
-        setStatusMessage({
-          type: 'error',
-          text: res.error || 'Demo login failed.',
-        });
-      }
-    } catch {
-      setStatusMessage({
-        type: 'error',
-        text: 'Error signing in as demo student.',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 4. Create Account with Email and Password
+  // 3. Create Account with Email and Password
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatusMessage(null);
@@ -490,22 +458,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   )}
                 </button>
               </div>
-
-              <div className="relative flex py-1 items-center">
-                <div className="flex-grow border-t border-[#E8F3FF]"></div>
-                <span className="flex-shrink mx-3 text-[11px] text-[#64778C] font-semibold uppercase">Or quick demo</span>
-                <div className="flex-grow border-t border-[#E8F3FF]"></div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleDemoStudentLogin}
-                disabled={isLoading || isGoogleLoading}
-                className="w-full min-h-[46px] py-2.5 px-4 rounded-xl bg-[#EBF4FE] hover:bg-[#D8E9FD] text-[#0866C6] text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 border border-[#0866C6]/25"
-              >
-                <User className="w-4 h-4" />
-                <span>Sign in as Demo Student (Aarav Sharma)</span>
-              </button>
             </form>
           ) : (
             /* Mode 2: Create Account Form */

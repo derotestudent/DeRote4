@@ -48,142 +48,32 @@ export function isValidEmail(email: string): boolean {
 }
 
 /**
- * Pre-seeded student records for demo and rich cohort display
+ * Registered student accounts store.
+ * Starts empty — only real registered student accounts are stored.
  */
-const INITIAL_STUDENT_ACCOUNTS: LocalStudentAccount[] = [
-  {
-    id: 'student_demo_01',
-    fullName: 'Aarav Sharma',
-    age: '15',
-    classGrade: '10',
-    schoolName: 'Delhi Public School, R.K. Puram',
-    email: 'student@derote.in',
-    phone: '9876543210',
-    password: 'student123',
-    completedReflections: 1,
-    totalReflections: 13,
-    badge: 'Class 10 Student',
-    createdAt: '2026-10-15T09:30:00.000Z',
-    lastLoginAt: '2026-11-04T08:00:00.000Z',
-  },
-  {
-    id: 'student_seed_02',
-    fullName: 'Diya Patel',
-    age: '14',
-    classGrade: '9',
-    schoolName: "The Mother's International School",
-    email: 'diya@derote.in',
-    phone: '9876543211',
-    password: 'password123',
-    completedReflections: 0, // In Progress
-    totalReflections: 13,
-    badge: 'Class 9 Student',
-    createdAt: '2026-10-18T11:15:00.000Z',
-    lastLoginAt: '2026-11-03T14:20:00.000Z',
-  },
-  {
-    id: 'student_seed_03',
-    fullName: 'Rohan Verma',
-    age: '16',
-    classGrade: '10',
-    schoolName: 'Sanskriti School, Chanakyapuri',
-    email: 'rohan@derote.in',
-    phone: '9876543212',
-    password: 'password123',
-    completedReflections: 1, // Submitted
-    totalReflections: 13,
-    badge: 'Class 10 Student',
-    createdAt: '2026-10-20T10:00:00.000Z',
-    lastLoginAt: '2026-11-02T16:45:00.000Z',
-  },
-  {
-    id: 'student_seed_04',
-    fullName: 'Ananya Iyer',
-    age: '13',
-    classGrade: '8',
-    schoolName: 'Modern School, Barakhamba Road',
-    email: 'ananya@derote.in',
-    phone: '9876543213',
-    password: 'password123',
-    completedReflections: 0, // Not Started
-    totalReflections: 13,
-    badge: 'Class 8 Student',
-    createdAt: '2026-10-25T13:40:00.000Z',
-    lastLoginAt: '2026-11-01T09:10:00.000Z',
-  },
-  {
-    id: 'student_seed_05',
-    fullName: 'Kabir Sen',
-    age: '17',
-    classGrade: '11',
-    schoolName: 'DPS International, Saket',
-    email: 'kabir@derote.in',
-    phone: '9876543214',
-    password: 'password123',
-    completedReflections: 0, // In Progress
-    totalReflections: 13,
-    badge: 'Class 11 Student',
-    createdAt: '2026-10-28T10:15:00.000Z',
-    lastLoginAt: '2026-11-03T11:00:00.000Z',
-  },
-  {
-    id: 'student_seed_06',
-    fullName: 'Meera Nair',
-    age: '18',
-    classGrade: '12',
-    schoolName: 'Greenwood High International School',
-    email: 'meera@derote.in',
-    phone: '9876543215',
-    password: 'password123',
-    completedReflections: 1, // Submitted
-    totalReflections: 13,
-    badge: 'Class 12 Student',
-    createdAt: '2026-10-12T08:30:00.000Z',
-    lastLoginAt: '2026-11-02T14:10:00.000Z',
-  },
-  {
-    id: 'student_seed_07',
-    fullName: 'Zoya Khan',
-    age: '15',
-    classGrade: 'Others',
-    schoolName: 'Open Learning Collective',
-    email: 'zoya@derote.in',
-    phone: '9876543216',
-    password: 'password123',
-    completedReflections: 0, // Not Started
-    totalReflections: 13,
-    badge: 'Student',
-    createdAt: '2026-10-30T16:20:00.000Z',
-    lastLoginAt: '2026-10-30T16:20:00.000Z',
-  },
-];
-
 export function getStoredRegisteredAccounts(): LocalStudentAccount[] {
   try {
-    if (typeof localStorage === 'undefined') return INITIAL_STUDENT_ACCOUNTS;
+    if (typeof localStorage === 'undefined') return [];
     const raw = localStorage.getItem(STORAGE_KEY_ACCOUNTS);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY_ACCOUNTS, JSON.stringify(INITIAL_STUDENT_ACCOUNTS));
-      return INITIAL_STUDENT_ACCOUNTS;
-    }
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      // Ensure all seed accounts exist if missing
-      let changed = false;
-      for (const seed of INITIAL_STUDENT_ACCOUNTS) {
-        if (!parsed.some((acc) => acc.id === seed.id)) {
-          parsed.push(seed);
-          changed = true;
-        }
+    if (Array.isArray(parsed)) {
+      // Filter out any legacy demo or seed accounts
+      const realAccounts = parsed.filter(
+        (acc: LocalStudentAccount) =>
+          acc &&
+          acc.id &&
+          !acc.id.startsWith('student_demo_') &&
+          !acc.id.startsWith('student_seed_')
+      );
+      if (realAccounts.length !== parsed.length) {
+        localStorage.setItem(STORAGE_KEY_ACCOUNTS, JSON.stringify(realAccounts));
       }
-      if (changed) {
-        localStorage.setItem(STORAGE_KEY_ACCOUNTS, JSON.stringify(parsed));
-      }
-      return parsed;
+      return realAccounts;
     }
-    return INITIAL_STUDENT_ACCOUNTS;
+    return [];
   } catch {
-    return INITIAL_STUDENT_ACCOUNTS;
+    return [];
   }
 }
 
