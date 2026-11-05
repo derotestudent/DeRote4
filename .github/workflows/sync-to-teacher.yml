@@ -25,5 +25,13 @@ jobs:
           TOKEN: ${{ secrets.chandan }}
         run: |
           git remote add teacher https://x-access-token:${TOKEN}@github.com/derotestudent/DeRote4.git
+
+          git fetch teacher main
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git merge --no-edit -X ours teacher/main -m "Merge teacher repository updates"
+
           git push teacher HEAD:main
           git push teacher --tags
