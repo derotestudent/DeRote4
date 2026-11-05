@@ -18,7 +18,15 @@ import {
   Calendar,
   ExternalLink,
   Users,
+  Database,
+  UploadCloud,
+  RefreshCw,
+  Cloud,
 } from 'lucide-react';
+import {
+  seedQuestionnaireToBackend,
+  testFirestoreConnection,
+} from '../services/firestoreBackend';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
 import { SECTIONS, QUESTIONS, Question } from '../data/questionnaire';
 import {
@@ -72,6 +80,64 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+
+  // Firebase Backend Status & Questionnaire sync state
+  const [isSyncingQuestionnaire, setIsSyncingQuestionnaire] = useState<boolean>(false);
+  const [isTestingPing, setIsTestingPing] = useState<boolean>(false);
+  const [backendPingResult, setBackendPingResult] = useState<string | null>(null);
+
+  const handleSyncQuestionnaire = async () => {
+    setIsSyncingQuestionnaire(true);
+    try {
+      const res = await seedQuestionnaireToBackend(true);
+      if (res.success) {
+        setNotification({
+          type: 'success',
+          text: res.message,
+        });
+      } else {
+        setNotification({
+          type: 'error',
+          text: res.message,
+        });
+      }
+    } catch (err: unknown) {
+      setNotification({
+        type: 'error',
+        text: `Sync error: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setIsSyncingQuestionnaire(false);
+    }
+  };
+
+  const handleTestBackendPing = async () => {
+    setIsTestingPing(true);
+    try {
+      const res = await testFirestoreConnection();
+      if (res.connected) {
+        setBackendPingResult('Verified');
+        setNotification({
+          type: 'success',
+          text: `Firestore Backend online! Connected to ${res.projectId}`,
+        });
+      } else {
+        setBackendPingResult('Failed');
+        setNotification({
+          type: 'error',
+          text: `Firestore Backend test failed: ${res.error || 'Check rules / connectivity'}`,
+        });
+      }
+    } catch (err: unknown) {
+      setBackendPingResult('Failed');
+      setNotification({
+        type: 'error',
+        text: `Firestore error: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setIsTestingPing(false);
+    }
+  };
 
   // Subscribe to admin auth state
   useEffect(() => {
@@ -712,6 +778,77 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                   <div className="text-[11px] text-slate-500 font-medium mt-1">
                     Awaiting questionnaire
                   </div>
+                </div>
+              </div>
+
+              {/* Firebase Cloud Backend & Questionnaire Status Card */}
+              <div className="bg-gradient-to-r from-[#062B50] via-[#083D6F] to-[#0A4D8C] text-white rounded-3xl p-5 sm:p-6 shadow-md border border-[#144A7E] flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-bold">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>Firebase Backend Active</span>
+                    </span>
+                    <span className="text-xs text-blue-200 font-mono">
+                      Project: gen-lang-client-0276070718
+                    </span>
+                  </div>
+
+                  <h3 className="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                    <Database className="w-5 h-5 text-blue-300 shrink-0" />
+                    <span>Cloud Firestore Backend &amp; Questionnaire Storage</span>
+                  </h3>
+
+                  <p className="text-xs sm:text-sm text-blue-100/80 max-w-2xl leading-relaxed">
+                    Student profiles (<code className="bg-white/10 px-1 py-0.5 rounded text-blue-200 font-mono text-xs">students</code>), answers &amp; drafts (<code className="bg-white/10 px-1 py-0.5 rounded text-blue-200 font-mono text-xs">submissions</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-blue-200 font-mono text-xs">drafts</code>), and the dynamic questionnaire (<code className="bg-white/10 px-1 py-0.5 rounded text-blue-200 font-mono text-xs">questionnaires</code>) are integrated directly with your cloud database.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleSyncQuestionnaire}
+                    disabled={isSyncingQuestionnaire}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#062B50] hover:bg-blue-50 font-bold text-xs sm:text-sm transition-all shadow-sm cursor-pointer disabled:opacity-60"
+                    title="Upload or update all 64 questions & 13 sections in Firestore backend"
+                  >
+                    {isSyncingQuestionnaire ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin text-[#0866C6]" />
+                        <span>Syncing to Cloud...</span>
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="w-4 h-4 text-[#0866C6]" />
+                        <span>Move / Sync Questionnaire to Backend</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleTestBackendPing}
+                    disabled={isTestingPing}
+                    className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-xs sm:text-sm transition-all cursor-pointer disabled:opacity-60"
+                    title="Verify read/write permissions to Firestore backend"
+                  >
+                    {isTestingPing ? (
+                      <RefreshCw className="w-4 h-4 animate-spin text-blue-200" />
+                    ) : (
+                      <Cloud className="w-4 h-4 text-blue-200" />
+                    )}
+                    <span>{backendPingResult ? `Ping: ${backendPingResult}` : 'Test Cloud Ping'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={loadData}
+                    className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-xs sm:text-sm transition-all cursor-pointer"
+                    title="Reload data from Firestore"
+                  >
+                    <RotateCcw className="w-4 h-4 text-blue-200" />
+                    <span className="hidden sm:inline">Refresh Data</span>
+                  </button>
                 </div>
               </div>
 

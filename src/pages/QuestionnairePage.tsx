@@ -33,6 +33,10 @@ import {
   syncStudentProfileFromPart1,
 } from '../services/localAuth';
 import { resetStudentQuestionnaireSession } from '../services/questionnaireService';
+import {
+  getQuestionnaireFromBackend,
+  seedQuestionnaireToBackend,
+} from '../services/firestoreBackend';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
 
 interface QuestionnairePageProps {
@@ -48,8 +52,10 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [sections, setSections] = useState(SECTIONS);
+  const [questions, setQuestions] = useState(QUESTIONS);
 
-  const totalSections = SECTIONS.length; // 13 sections with About Me split into Part 1 & Part 2
+  const totalSections = sections.length; // sections from backend or fallback default
 
   // Initialize draft and check submission status on mount
   useEffect(() => {
@@ -63,6 +69,22 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
         setView('confirmation');
         setIsLoaded(true);
         return;
+      }
+
+      // Load questions from Firestore backend if available, or auto-seed
+      try {
+        const cloudQ = await getQuestionnaireFromBackend();
+        if (cloudQ && cloudQ.questions && cloudQ.questions.length > 0) {
+          if (isMounted) {
+            setSections(cloudQ.sections);
+            setQuestions(cloudQ.questions);
+          }
+        } else {
+          // Initialize/seed questions in Firestore backend
+          seedQuestionnaireToBackend(false).catch(() => {});
+        }
+      } catch (err) {
+        console.warn('Backend questionnaire load fallback to local:', err);
       }
 
       const draft = await loadDraft();
@@ -99,12 +121,12 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
   }, [totalSections]);
 
   const sectionData = useMemo(() => {
-    return SECTIONS.find((s) => s.id === currentSection) || SECTIONS[0];
-  }, [currentSection]);
+    return sections.find((s) => s.id === currentSection) || sections[0];
+  }, [sections, currentSection]);
 
   const sectionQuestions = useMemo(() => {
-    return QUESTIONS.filter((q) => q.section === currentSection);
-  }, [currentSection]);
+    return questions.filter((q) => q.section === currentSection);
+  }, [questions, currentSection]);
 
   const updateDraft = (updated: StudentAnswers, sec: number) => {
     saveDraft(updated, sec);
@@ -189,8 +211,8 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
   };
 
   const getSectionUnansweredCount = (secId: number): number => {
-    const questions = QUESTIONS.filter((q) => q.section === secId);
-    return questions.filter((q) => {
+    const secQuestions = questions.filter((q) => q.section === secId);
+    return secQuestions.filter((q) => {
       const val = answers[q.n];
       if (val === undefined || val === null) return true;
       if (typeof val === 'string') return val.trim() === '';
@@ -530,9 +552,9 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
 
             {/* Sections List */}
             <div className="bg-white border border-[#E2EDF8] rounded-2xl divide-y divide-[#EAF2FC] overflow-hidden shadow-xs">
-              {SECTIONS.map((sec) => {
+              {sections.map((sec) => {
                 const unansweredCount = getSectionUnansweredCount(sec.id);
-                const totalSectionQuestions = QUESTIONS.filter((q) => q.section === sec.id).length;
+                const totalSectionQuestions = questions.filter((q) => q.section === sec.id).length;
 
                 return (
                   <button

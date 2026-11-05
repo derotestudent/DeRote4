@@ -6,6 +6,8 @@
  * - Zero external cloud service dependencies (pure browser-local storage)
  */
 
+import { saveStudentProfileToBackend } from './firestoreBackend';
+
 export interface LocalStudentAccount {
   id: string;
   fullName: string;
@@ -409,6 +411,11 @@ export async function createStudentAccount(data: {
   saveRegisteredAccounts(accounts);
   setStoredStudent(newStudent);
 
+  // Sync profile to Firestore backend
+  saveStudentProfileToBackend(newStudent).catch((err) => {
+    console.warn('Async cloud student profile sync warning:', err);
+  });
+
   return { success: true, student: newStudent };
 }
 
@@ -514,6 +521,11 @@ export function syncStudentProfileFromPart1(
   }
   saveRegisteredAccounts(accounts);
 
+  // Sync updated profile to Firestore backend
+  saveStudentProfileToBackend(updated).catch((err) => {
+    console.warn('Async cloud student profile sync warning:', err);
+  });
+
   return updated;
 }
 
@@ -559,6 +571,11 @@ export function updateStudentProfile(updates: {
     accounts.unshift(updated);
   }
   saveRegisteredAccounts(accounts);
+
+  // Sync updated profile to Firestore backend
+  saveStudentProfileToBackend(updated).catch((err) => {
+    console.warn('Async cloud student profile sync warning:', err);
+  });
 
   return { success: true, student: updated };
 }

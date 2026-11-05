@@ -1,4 +1,11 @@
 import { QUESTIONNAIRE_VERSION, QUESTIONS, SECTIONS } from '../data/questionnaire';
+import { getCurrentStudent } from './localAuth';
+import {
+  saveDraftToBackend,
+  loadDraftFromBackend,
+  saveSubmissionToBackend,
+  getSubmissionFromBackend,
+} from './firestoreBackend';
 
 export type StudentAnswers = Record<number, string | string[]>;
 
@@ -18,45 +25,92 @@ export interface SubmissionData {
 const DRAFT_STORAGE_KEY = 'derote_student_questionnaire_draft';
 const SUBMISSION_STORAGE_KEY = 'derote_student_questionnaire_submission';
 
-// Will later call a PHP endpoint: GET /api/draft.php
+/**
+ * Loads draft answers from local cache, with automatic cloud restore from Firestore backend.
+ */
 export async function loadDraft(): Promise<{ answers: StudentAnswers; currentSection: number } | null> {
+  const current = getCurrentStudent();
+
+  // 1. Check local storage first for fast response
   try {
     const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as DraftData;
-    return {
-      answers: parsed.answers || {},
-      currentSection: typeof parsed.currentSection === 'number' ? parsed.currentSection : 1,
-    };
+    if (raw) {
+      const parsed = JSON.parse(raw) as DraftData;
+      if (parsed.answers && Object.keys(parsed.answers).length > 0) {
+        return {
+          answers: parsed.answers,
+          currentSection: typeof parsed.currentSection === 'number' ? parsed.currentSection : 1,
+        };
+      }
+    }
   } catch (err) {
     console.error('Failed to load draft from localStorage', err);
-    return null;
   }
+
+  // 2. If no local draft found, try loading from Firestore backend
+  if (current?.id) {
+    try {
+      const cloudDraft = await loadDraftFromBackend(current.id);
+      if (cloudDraft && Object.keys(cloudDraft.answers).length > 0) {
+        // Cache locally for offline availability
+        localStorage.setItem(
+          DRAFT_STORAGE_KEY,
+          JSON.stringify({
+            answers: cloudDraft.answers,
+            currentSection: cloudDraft.currentSection,
+            version: QUESTIONNAIRE_VERSION,
+            updatedAt: new Date().toISOString(),
+          })
+        );
+        return cloudDraft;
+      }
+    } catch (err) {
+      console.warn('Failed to load draft from Firestore backend', err);
+    }
+  }
+
+  return null;
 }
 
-// Will later call a PHP endpoint: POST /api/draft.php
+/**
+ * Saves draft answers to local storage and syncs to Firestore backend.
+ */
 export async function saveDraft(answers: StudentAnswers, currentSection: number): Promise<void> {
+  const payload: DraftData = {
+    answers,
+    currentSection,
+    version: QUESTIONNAIRE_VERSION,
+    updatedAt: new Date().toISOString(),
+  };
+
+  // 1. Write through local cache
   try {
-    const payload: DraftData = {
-      answers,
-      currentSection,
-      version: QUESTIONNAIRE_VERSION,
-      updatedAt: new Date().toISOString(),
-    };
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
   } catch (err) {
     console.error('Failed to save draft to localStorage', err);
   }
+
+  // 2. Sync to Firestore backend asynchronously
+  const current = getCurrentStudent();
+  if (current?.id) {
+    saveDraftToBackend(current.id, answers, currentSection).catch((err) => {
+      console.warn('Async cloud draft save warning:', err);
+    });
+  }
 }
 
-// Will later call a PHP endpoint: POST /api/submit.php
+/**
+ * Submits final questionnaire answers to local storage and Firestore backend.
+ */
 export async function submitQuestionnaire(answers: StudentAnswers): Promise<void> {
+  const payload: SubmissionData = {
+    answers,
+    version: QUESTIONNAIRE_VERSION,
+    submittedAt: new Date().toISOString(),
+  };
+
+  // 1. Save to local storage
   try {
-    const payload: SubmissionData = {
-      answers,
-      version: QUESTIONNAIRE_VERSION,
-      submittedAt: new Date().toISOString(),
-    };
     localStorage.setItem(SUBMISSION_STORAGE_KEY, JSON.stringify(payload));
     // Clear draft on successful submission
     localStorage.removeItem(DRAFT_STORAGE_KEY);
@@ -64,21 +118,50 @@ export async function submitQuestionnaire(answers: StudentAnswers): Promise<void
     console.error('Failed to submit questionnaire to localStorage', err);
     throw err;
   }
-}
 
-// Will later call a PHP endpoint: GET /api/submission-status.php
-// Note: The real one-submission rule will be enforced on the server.
-export async function hasSubmitted(): Promise<boolean> {
-  try {
-    const raw = localStorage.getItem(SUBMISSION_STORAGE_KEY);
-    return !!raw;
-  } catch (err) {
-    console.error('Failed to check submission status in localStorage', err);
-    return false;
+  // 2. Sync to Firestore backend
+  const current = getCurrentStudent();
+  if (current?.id) {
+    await saveSubmissionToBackend(current.id, payload).catch((err) => {
+      console.warn('Could not sync submission to Firestore backend immediately:', err);
+    });
   }
 }
 
-// Will later call a PHP endpoint: POST /api/reset-submission.php
+/**
+ * Checks if current student has submitted questionnaire.
+ */
+export async function hasSubmitted(): Promise<boolean> {
+  // Check local storage
+  try {
+    const raw = localStorage.getItem(SUBMISSION_STORAGE_KEY);
+    if (raw) return true;
+  } catch (err) {
+    console.error('Failed to check submission status in localStorage', err);
+  }
+
+  // Check active student account record
+  const current = getCurrentStudent();
+  if (current && (current.completedReflections ?? 0) > 0) {
+    return true;
+  }
+
+  // Check Firestore backend
+  if (current?.id) {
+    try {
+      const cloudSub = await getSubmissionFromBackend(current.id);
+      if (cloudSub) return true;
+    } catch {
+      // offline fallback
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Resets submission for testing / retake.
+ */
 export async function resetSubmission(): Promise<void> {
   try {
     localStorage.removeItem(SUBMISSION_STORAGE_KEY);
@@ -88,15 +171,33 @@ export async function resetSubmission(): Promise<void> {
   }
 }
 
+/**
+ * Retrieves submission data from local cache or Firestore backend.
+ */
 export async function getSubmissionData(): Promise<SubmissionData | null> {
   try {
     const raw = localStorage.getItem(SUBMISSION_STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as SubmissionData;
+    if (raw) {
+      return JSON.parse(raw) as SubmissionData;
+    }
   } catch (err) {
     console.error('Failed to get submission data from localStorage', err);
-    return null;
   }
+
+  const current = getCurrentStudent();
+  if (current?.id) {
+    try {
+      const cloudSub = await getSubmissionFromBackend(current.id);
+      if (cloudSub) {
+        localStorage.setItem(SUBMISSION_STORAGE_KEY, JSON.stringify(cloudSub));
+        return cloudSub;
+      }
+    } catch (err) {
+      console.warn('Could not retrieve cloud submission data', err);
+    }
+  }
+
+  return null;
 }
 
 export async function getQuestionnaireProgress(): Promise<{

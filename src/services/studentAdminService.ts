@@ -14,6 +14,12 @@ import {
   setStoredStudent,
 } from './localAuth';
 import { QUESTIONS } from '../data/questionnaire';
+import {
+  getAllStudentsFromBackend,
+  getAllSubmissionsFromBackend,
+  updateStudentProfileInBackend,
+} from './firestoreBackend';
+import type { SubmissionData } from './api';
 
 export type QuestionnaireStatus = 'Not Started' | 'In Progress' | 'Submitted';
 
@@ -309,8 +315,36 @@ export function formatClassDisplay(grade?: string): string {
  * Reads all registered student records and resolves their status and answers
  */
 export async function fetchAllStudentsWithStatus(): Promise<AdminStudentRecord[]> {
-  const accounts = getStoredRegisteredAccounts();
+  let accounts = getStoredRegisteredAccounts();
   const currentStudent = getCurrentStudent();
+
+  // Try fetching cloud students and submissions from Firestore backend
+  let cloudSubmissionsMap: Record<string, SubmissionData> | null = null;
+  try {
+    const [cloudStudents, cloudSubs] = await Promise.all([
+      getAllStudentsFromBackend(),
+      getAllSubmissionsFromBackend(),
+    ]);
+
+    if (cloudStudents && cloudStudents.length > 0) {
+      // Merge cloud students into accounts
+      const localMap = new Map(accounts.map((a) => [a.id, a]));
+      for (const cs of cloudStudents) {
+        if (!localMap.has(cs.id)) {
+          accounts.unshift(cs);
+          localMap.set(cs.id, cs);
+        } else {
+          const existing = localMap.get(cs.id)!;
+          localMap.set(cs.id, { ...existing, ...cs });
+        }
+      }
+      accounts = Array.from(localMap.values());
+      saveRegisteredAccounts(accounts);
+    }
+    cloudSubmissionsMap = cloudSubs;
+  } catch (err) {
+    console.warn('Could not sync with Firestore backend during fetchAllStudentsWithStatus:', err);
+  }
 
   const records: AdminStudentRecord[] = accounts.map((acc) => {
     let answers: Record<number, string | string[]> = {};
@@ -318,19 +352,32 @@ export async function fetchAllStudentsWithStatus(): Promise<AdminStudentRecord[]
     let submittedAt: string | undefined;
     let updatedAt: string | undefined;
 
-    // 1. Try student-specific submission in localStorage
-    try {
-      const subRaw = localStorage.getItem(`${STORAGE_PREFIX_SUBMISSION}${acc.id}`);
-      if (subRaw) {
-        const parsed = JSON.parse(subRaw);
-        if (parsed.answers && Object.keys(parsed.answers).length > 0) {
-          answers = parsed.answers;
-          status = 'Submitted';
-          submittedAt = parsed.submittedAt || acc.lastLoginAt;
-          updatedAt = parsed.submittedAt;
-        }
+    // 0. Check Firestore cloud submissions map
+    if (cloudSubmissionsMap && cloudSubmissionsMap[acc.id]) {
+      const cloudSub = cloudSubmissionsMap[acc.id];
+      if (cloudSub.answers && Object.keys(cloudSub.answers).length > 0) {
+        answers = { ...cloudSub.answers };
+        status = 'Submitted';
+        submittedAt = cloudSub.submittedAt || acc.lastLoginAt;
+        updatedAt = cloudSub.submittedAt;
       }
-    } catch {}
+    }
+
+    // 1. Try student-specific submission in localStorage
+    if (status !== 'Submitted') {
+      try {
+        const subRaw = localStorage.getItem(`${STORAGE_PREFIX_SUBMISSION}${acc.id}`);
+        if (subRaw) {
+          const parsed = JSON.parse(subRaw);
+          if (parsed.answers && Object.keys(parsed.answers).length > 0) {
+            answers = parsed.answers;
+            status = 'Submitted';
+            submittedAt = parsed.submittedAt || acc.lastLoginAt;
+            updatedAt = parsed.submittedAt;
+          }
+        }
+      } catch {}
+    }
 
     // 2. Try student-specific draft in localStorage if not submitted
     if (status !== 'Submitted') {
@@ -498,6 +545,16 @@ export async function updateStudentProfileByAdmin(
 
   accounts[existingIdx] = updatedAccount;
   saveRegisteredAccounts(accounts);
+
+  // Sync to Firestore backend asynchronously
+  updateStudentProfileInBackend(studentId, {
+    fullName: cleanName,
+    age: cleanAge,
+    classGrade: cleanClass,
+    schoolName: cleanSchool,
+  }).catch((err) => {
+    console.warn('Async cloud student profile update warning:', err);
+  });
 
   // If the active student session matches this ID, sync it too
   const current = getCurrentStudent();

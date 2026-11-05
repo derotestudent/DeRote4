@@ -1,0 +1,38 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Student Profiles collection
+    // Stores personal details, class/grade, institution, and reflection completion counts
+    match /students/{studentId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if false;
+    }
+
+    // 2. Final Questionnaire Submissions collection
+    // Stores submitted answers for individual students
+    match /submissions/{studentId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 3. In-progress Questionnaire Drafts collection
+    // Stores auto-saved drafts and current section index
+    match /drafts/{studentId} {
+      allow read, write: if true;
+    }
+
+    // 4. Questionnaire Bank & Definitions collection
+    // Stores sections, questions, and instructions in the cloud
+    match /questionnaires/{documentId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Connection testing
+    match /_connection_test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}
