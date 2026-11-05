@@ -323,8 +323,10 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#F2F7FC]/80 via-white to-[#F4F8FD] text-[#102C46]">
-      {/* Top Header Bar (No duplicate Edit Profile button here) */}
-      <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-[#E8F3FF] transition-colors">
+      {/* Screen Interface - cleanly hidden during print */}
+      <div className="print:hidden flex flex-col min-h-screen">
+        {/* Top Header Bar (No duplicate Edit Profile button here) */}
+        <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-[#E8F3FF] transition-colors">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button
@@ -944,31 +946,30 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
           </div>
         </div>
       )}
+      </div>
 
       {/* ========================================================= */}
-      {/* PERSONAL PRINT REPORT (Only rendered when completed)     */}
+      {/* PERSONAL PRINT REPORT                                    */}
       {/* ========================================================= */}
-      {isCompleted && (
-        <PrintableReport
-          type="individual-student"
-          title={`STUDENT REPORT — ${studentDisplayName.toUpperCase()}`}
-          student={{
-            fullName: studentDisplayName,
-            age: studentAge,
-            classGrade: student?.classGrade || '10',
-            schoolName: studentSchool,
-            status: 'Submitted',
-            submittedAt: submissionData?.submittedAt,
-            answers: allAnswers,
-          }}
-          date={new Date().toLocaleDateString('en-US', {
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric',
-          })}
-          isStudentSelfView={true}
-        />
-      )}
+      <PrintableReport
+        type="individual-student"
+        title={`STUDENT REPORT — ${studentDisplayName.toUpperCase()}`}
+        student={{
+          fullName: studentDisplayName,
+          age: studentAge,
+          classGrade: student?.classGrade || '10',
+          schoolName: studentSchool,
+          status: isCompleted ? 'Submitted' : Object.keys(allAnswers).length > 0 ? 'In Progress' : 'Not Started',
+          submittedAt: submissionData?.submittedAt,
+          answers: allAnswers,
+        }}
+        date={new Date().toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        })}
+        isStudentSelfView={true}
+      />
     </div>
   );
 };

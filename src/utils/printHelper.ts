@@ -2,41 +2,39 @@
  * Print Utility for DeRote Student Insight System
  *
  * Sets document title to the meaningful report title for native print & "Save as PDF" filename,
- * triggers browser print dialog, and cleanly restores document title after dialog closes.
+ * triggers browser print dialog synchronously directly within user interaction event handler,
+ * and restores document title after print completion.
  */
-
-let originalTitleCache: string | null = null;
 
 export function executePrint(reportTitle: string): void {
   if (typeof window === 'undefined') return;
 
-  // Cache the original document title if not already cached
-  if (!originalTitleCache) {
-    originalTitleCache = document.title || 'DeRote — Student Insight System';
-  }
+  const originalTitle = document.title || 'DeRote — Student Insight System';
 
-  // Set the document title to the exact uppercase report title
-  document.title = reportTitle;
+  try {
+    // 1. Immediately update document title so the browser print dialog uses this exact name for PDF / header
+    document.title = reportTitle;
 
-  // Use requestAnimationFrame and small timeout so browser has painted the title
-  window.requestAnimationFrame(() => {
-    setTimeout(() => {
-      try {
-        window.print();
-      } catch (err) {
-        console.error('Failed to trigger window.print():', err);
-      } finally {
-        const restore = () => {
-          if (originalTitleCache) {
-            document.title = originalTitleCache;
-          }
-          window.removeEventListener('afterprint', restore);
-        };
+    // 2. Bring window / iframe into active focus
+    window.focus();
 
-        window.addEventListener('afterprint', restore);
-        // Fallback restore in case afterprint does not fire in all environments
-        setTimeout(restore, 1200);
+    // 3. Immediately trigger browser native print synchronously to preserve user activation
+    window.print();
+  } catch (err) {
+    console.error('Failed to trigger window.print():', err);
+  } finally {
+    // 4. Restore document title cleanly after print dialog is closed or after a safe delay
+    let restored = false;
+    const restore = () => {
+      if (!restored) {
+        restored = true;
+        document.title = originalTitle;
+        window.removeEventListener('afterprint', restore);
       }
-    }, 60);
-  });
+    };
+
+    window.addEventListener('afterprint', restore);
+    // Safe timeout fallback in case afterprint is not supported or not triggered in certain environments
+    setTimeout(restore, 10000);
+  }
 }

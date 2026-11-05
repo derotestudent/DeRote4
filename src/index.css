@@ -20,18 +20,22 @@
     size: A4 portrait;
   }
 
+  /* Reset all ancestor wrappers so flexbox or min-height does not collapse pagination */
   html,
   body,
   #root,
   #root > div,
-  main {
+  main,
+  main > div,
+  div:has(> #derote-printable-area) {
     background-color: #ffffff !important;
     background: #ffffff !important;
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
     height: auto !important;
-    min-height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     overflow: visible !important;
     display: block !important;
     -webkit-print-color-adjust: exact !important;
@@ -42,11 +46,15 @@
   .print\:hidden,
   .no-print,
   nav,
-  aside {
+  aside,
+  header:not(#derote-printable-area header),
+  footer:not(#derote-printable-area footer),
+  button:not(#derote-printable-area button),
+  [role="dialog"] {
     display: none !important;
   }
 
-  /* Force printable area to show */
+  /* Force printable area to show cleanly */
   #derote-printable-area {
     display: block !important;
     visibility: visible !important;
@@ -55,6 +63,7 @@
     padding: 0 !important;
     background: #ffffff !important;
     color: #000000 !important;
+    position: static !important;
   }
 
   /* Page break controls */
