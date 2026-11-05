@@ -1,6 +1,6 @@
 {
   "name": "DeRote (3)",
-  "description": "A reflective insight experience for students in Classes 5–12 exploring preferences, choices, motivations, and future possibilities.",
+  "description": "A reflective insight experience for students exploring preferences, choices, motivations, and future possibilities.",
   "capabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

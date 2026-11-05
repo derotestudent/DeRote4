@@ -42,8 +42,8 @@ export interface ProblemCardData {
 export const PROBLEM_CARDS: ProblemCardData[] = [
   {
     id: 'family-expectations',
-    heading: 'Family Expectations',
-    tagline: 'Sometimes, it feels like your future has already been decided.',
+    heading: 'Family expectations',
+    tagline: "I don't want to disappoint my parents.",
     intro: 'Sometimes, it feels like your future has already been decided.',
     situations: [
       'Maybe your parents want you to become a doctor, engineer or government officer. Relatives keep asking about your marks and future plans. Your family might compare you with cousins or other students who are doing well.',
@@ -60,8 +60,8 @@ export const PROBLEM_CARDS: ProblemCardData[] = [
   },
   {
     id: 'career-confusion',
-    heading: 'Career Confusion',
-    tagline: 'Everyone wants to know your future plans. You wish you knew them too.',
+    heading: 'Career confusion',
+    tagline: "Everyone asks what I want to become. I'm not sure yet.",
     intro: 'Everyone wants to know your future plans. You wish you knew them too.',
     situations: [
       'Perhaps you’re interested in several different things but don’t know which one to pursue. Maybe you’ve changed your mind several times. Some days you imagine a creative career, other days something technical, and sometimes you just have no idea.',
@@ -77,29 +77,9 @@ export const PROBLEM_CARDS: ProblemCardData[] = [
     alt: 'Student facing career choices and confusion',
   },
   {
-    id: 'financial-pressure',
-    heading: 'Financial Pressure',
-    tagline: 'Sometimes, your choices are influenced by what’s happening at home.',
-    intro: 'Sometimes, your choices are influenced by what’s happening at home.',
-    situations: [
-      'Maybe you want to join a coaching institute, buy books, learn a skill or explore an interest, but the expenses make it difficult. You might avoid asking your parents for something because you already know money is tight.',
-      'Perhaps you see other students attending expensive classes, buying equipment or pursuing opportunities that aren’t easily available to you.',
-      'Sometimes you take household responsibilities seriously, worry about your family’s finances, or feel that you need to become successful quickly so you can support them.',
-    ],
-    thoughts: [
-      'I don’t want to ask my parents for more money.',
-      'Would I have more opportunities if things were different at home?',
-      'I want to pursue my interests, but can my family afford it?',
-      'I should probably choose something that guarantees an income.',
-    ],
-    closing: 'Financial circumstances can influence your decisions, but they don’t define your ability or potential.',
-    image: cardFinancialPressure,
-    alt: 'Student aware of household and financial circumstances',
-  },
-  {
     id: 'lost-motivation',
-    heading: 'Lost Motivation',
-    tagline: 'You haven’t stopped caring. You might just be tired of how things are going.',
+    heading: 'Lost motivation',
+    tagline: "I'm studying because I have to, not because I know what I'm working towards.",
     intro: 'You haven’t necessarily stopped caring. You might just be tired of how things are going.',
     situations: [
       'Maybe studying has become a repeated cycle of school, coaching, homework, tests and marks. You keep working, but you rarely get the chance to explore something simply because it interests you.',
@@ -117,47 +97,9 @@ export const PROBLEM_CARDS: ProblemCardData[] = [
     alt: 'Student feeling tired of the repeated study cycle',
   },
   {
-    id: 'struggling-to-focus',
-    heading: 'Struggling to Focus',
-    tagline: 'You sit down to study, but somehow your mind is somewhere else.',
-    intro: 'You sit down to study, but somehow your mind is somewhere else.',
-    situations: [
-      'You open your book and read the same paragraph three times. You check your phone for a minute and suddenly half an hour has passed. Sometimes even without your phone, your thoughts wander.',
-      'Maybe there’s noise at home, people interrupting you, household responsibilities or a lack of personal space. Perhaps you’re worried about something, aren’t sleeping well, or simply don’t know where to begin.',
-      'And when you finally realise how much time has passed, you feel frustrated with yourself.',
-    ],
-    thoughts: [
-      'Why can’t I concentrate like everyone else?',
-      'I had the entire evening. Where did the time go?',
-      'I know I have to study, but I just can’t get started.',
-    ],
-    closing: 'Difficulty concentrating isn’t always about a lack of effort. Sometimes there is more going on than people realise.',
-    image: cardStrugglingFocus,
-    alt: 'Student struggling with concentration and wandering thoughts',
-  },
-  {
-    id: 'feeling-left-behind',
-    heading: 'Feeling Left Behind',
-    tagline: 'It sometimes feels like everyone else has figured life out except you.',
-    intro: 'It sometimes feels like everyone else has figured life out except you.',
-    situations: [
-      'Your friends are getting better marks, joining competitions, learning new things or talking confidently about their future. You scroll through social media and see people your age achieving things you haven’t even started.',
-      'Maybe you feel that you’re not progressing quickly enough. Sometimes you become so busy comparing yourself with others that you forget what you actually enjoy.',
-    ],
-    thoughts: [
-      'Everyone seems to be doing something with their life.',
-      'Am I wasting my time?',
-      'Why does everything look so easy for other people?',
-      'Maybe I’m just not good enough.',
-    ],
-    closing: 'You rarely see the uncertainty and struggles behind someone else’s achievements.',
-    image: cardFeelingBehind,
-    alt: 'Student comparing themselves to others and feeling behind',
-  },
-  {
     id: 'finding-my-strengths',
-    heading: 'Finding My Strengths',
-    tagline: 'You know you have interests, but you aren’t sure what you’re actually good at.',
+    heading: 'Finding my strengths',
+    tagline: "I know my marks, but not always what I'm good at.",
     intro: 'You know you have interests, but you aren’t sure what you’re actually good at.',
     situations: [
       'Maybe you enjoy drawing, repairing things, gaming, storytelling, helping people, sports or exploring technology. But because these interests don’t always show up in your school marks, you might not consider them real strengths.',
@@ -174,28 +116,86 @@ export const PROBLEM_CARDS: ProblemCardData[] = [
     alt: 'Student wondering what their real unique strengths are',
   },
   {
-    id: 'studying-just-for-marks',
-    heading: 'Studying Just for Marks',
-    tagline: 'You study because there’s an exam coming, not because you’re interested.',
-    intro: 'You study because there’s an examination coming, not necessarily because you’re interested.',
+    id: 'feeling-behind',
+    heading: 'Feeling behind',
+    tagline: "Everyone seems ahead. I'm still figuring things out.",
+    intro: 'It sometimes feels like everyone else has figured life out except you.',
     situations: [
-      'You memorise chapters, practise questions and prepare for tests. Once the examination is over, much of what you studied doesn’t feel meaningful anymore.',
-      'Maybe you enjoy understanding how things work but dislike memorising answers. Perhaps you want to ask questions but feel that completing the syllabus is always more important.',
-      'Sometimes getting good marks becomes the only reason to study, and curiosity slowly gets pushed aside.',
+      'Your friends are getting better marks, joining competitions, learning new things or talking confidently about their future. You scroll through social media and see people your age achieving things you haven’t even started.',
+      'Maybe you feel that you’re not progressing quickly enough. Sometimes you become so busy comparing yourself with others that you forget what you actually enjoy.',
     ],
     thoughts: [
-      'Will I ever actually use what I’m memorising?',
-      'I want to understand the subject, not just score in it.',
-      'Why does everyone only ask about my marks?',
+      'Everyone seems to be doing something with their life.',
+      'Am I wasting my time?',
+      'Why does everything look so easy for other people?',
+      'Maybe I’m just not good enough.',
     ],
-    closing: 'Wanting learning to feel meaningful doesn’t make you a less serious student.',
+    closing: 'You rarely see the uncertainty and struggles behind someone else’s achievements.',
+    image: cardFeelingBehind,
+    alt: 'Student comparing themselves to others and feeling behind',
+  },
+  {
+    id: 'my-voice-my-choices',
+    heading: 'My voice, my choices',
+    tagline: "I wish people would ask what matters to me.",
+    intro: 'Sometimes it feels like everyone has an opinion on what you should do, except you.',
+    situations: [
+      'You study because there is an examination coming, but deep down you wish people asked what you are curious about.',
+      'Maybe you want to ask questions or choose your own subjects, but syllabus deadlines and family expectations drown out your own voice.',
+      'Getting good marks is valued, but wanting learning to feel meaningful is just as important.',
+    ],
+    thoughts: [
+      'I wish people would ask what matters to me.',
+      'I want to understand the subject, not just score in it.',
+      'Will anyone listen if I say what I really feel?',
+    ],
+    closing: 'Wanting learning to feel meaningful and having your own voice doesn’t make you a less serious student.',
     image: cardStudyingMarks,
-    alt: 'Student reflecting on rote memorization versus authentic curiosity',
+    alt: 'Student dealing with opinions and finding their own voice',
+  },
+  {
+    id: 'financial-pressure',
+    heading: 'Financial pressure',
+    tagline: "Sometimes, your choices are influenced by what’s happening at home.",
+    intro: 'Sometimes, your choices are influenced by what’s happening at home.',
+    situations: [
+      'Maybe you want to join a coaching institute, buy books, learn a skill or explore an interest, but the expenses make it difficult. You might avoid asking your parents for something because you already know money is tight.',
+      'Perhaps you see other students attending expensive classes, buying equipment or pursuing opportunities that aren’t easily available to you.',
+      'Sometimes you take household responsibilities seriously, worry about your family’s finances, or feel that you need to become successful quickly so you can support them.',
+    ],
+    thoughts: [
+      'I don’t want to ask my parents for more money.',
+      'Would I have more opportunities if things were different at home?',
+      'I want to pursue my interests, but can my family afford it?',
+      'I should probably choose something that guarantees an income.',
+    ],
+    closing: 'Financial circumstances can influence your decisions, but they don’t define your ability or potential.',
+    image: cardFinancialPressure,
+    alt: 'Student aware of household and financial circumstances',
+  },
+  {
+    id: 'struggling-to-focus',
+    heading: 'Struggling to focus',
+    tagline: "You sit down to study, but somehow your mind is somewhere else.",
+    intro: 'You sit down to study, but somehow your mind is somewhere else.',
+    situations: [
+      'You open your book and read the same paragraph three times. You check your phone for a minute and suddenly half an hour has passed. Sometimes even without your phone, your thoughts wander.',
+      'Maybe there’s noise at home, people interrupting you, household responsibilities or a lack of personal space. Perhaps you’re worried about something, aren’t sleeping well, or simply don’t know where to begin.',
+      'And when you finally realise how much time has passed, you feel frustrated with yourself.',
+    ],
+    thoughts: [
+      'Why can’t I concentrate like everyone else?',
+      'I had the entire evening. Where did the time go?',
+      'I know I have to study, but I just can’t get started.',
+    ],
+    closing: 'Difficulty concentrating isn’t always about a lack of effort. Sometimes there is more going on than people realise.',
+    image: cardStrugglingFocus,
+    alt: 'Student struggling with concentration and wandering thoughts',
   },
   {
     id: 'fear-of-disappointing-others',
-    heading: 'Fear of Disappointing Others',
-    tagline: 'Sometimes, making a mistake feels bigger than the mistake itself.',
+    heading: 'Fear of disappointing others',
+    tagline: "Sometimes, making a mistake feels bigger than the mistake itself.",
     intro: 'Sometimes, making a mistake feels bigger than the mistake itself.',
     situations: [
       'Maybe you avoid trying something because you’re afraid of failing. Perhaps you don’t ask questions in class because you worry people might laugh. You might hide a poor result, hesitate to share an idea or feel nervous about telling your parents that something isn’t going well.',
@@ -213,8 +213,8 @@ export const PROBLEM_CARDS: ProblemCardData[] = [
   },
   {
     id: 'too-many-choices',
-    heading: 'Too Many Choices, No Direction',
-    tagline: 'There are so many possibilities that choosing one feels impossible.',
+    heading: 'Too many choices, no direction',
+    tagline: "There are so many possibilities that choosing one feels impossible.",
     intro: 'There are so many possibilities that choosing one feels impossible.',
     situations: [
       'You hear about different streams, colleges, entrance examinations, courses, careers and skills. One person tells you to follow your passion, another says to choose something secure, and someone else suggests doing what everyone else is doing.',
@@ -306,11 +306,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
           ========================================================================= */}
       <section
         id="student-concerns"
-        className="relative px-2.5 sm:px-6 lg:px-8 pt-4 sm:pt-12 lg:pt-14 pb-12 sm:pb-24 bg-gradient-to-b from-[#F2F7FC]/80 via-white to-white border-b border-[#E8F3FF]"
+        className="relative px-3 sm:px-6 lg:px-8 pt-3 sm:pt-12 lg:pt-14 pb-12 sm:pb-24 bg-gradient-to-b from-[#F2F7FC]/80 via-white to-white border-b border-[#E8F3FF]"
       >
         <div className="max-w-6xl mx-auto">
           {/* Section Header */}
-          <div className="mb-4 sm:mb-12 text-center max-w-2xl mx-auto">
+          <div className="mb-3.5 sm:mb-12 text-center max-w-2xl mx-auto">
             <div className="inline-flex items-center justify-center gap-1.5 sm:gap-2 mb-1 sm:mb-2.5">
               <h1 className="text-xl sm:text-4xl lg:text-[42px] font-extrabold text-[#062B50] tracking-tight leading-tight">
                 Ever feel like nobody gets it?
@@ -330,14 +330,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
           </div>
 
           {/* Cards Grid:
-              - Mobile: 2 columns with compact height and spacing so 4-6 cards are visible initially
+              - Mobile: 2 columns, landscape images, exactly 6 cards visible on page one
+              - Consistent 2-line description area for uniform card heights across all cards
               - Desktop: 3 columns with spacious layout and original desktop proportions */}
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-6 lg:gap-8">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-6 lg:gap-8 items-stretch">
             {PROBLEM_CARDS.map((card, index) => (
               <div
                 key={card.id}
                 onClick={() => setSelectedCardIndex(index)}
-                className="bg-white rounded-2xl sm:rounded-3xl p-2 sm:p-5 lg:p-6 border border-[#E2EDF8] shadow-xs hover:shadow-lg hover:border-[#0866C6]/30 transition-all duration-200 flex flex-col justify-between group cursor-pointer active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-[#0866C6]"
+                className="bg-white rounded-2xl sm:rounded-3xl p-2.5 sm:p-5 lg:p-6 border border-[#E2EDF8] shadow-xs hover:shadow-lg hover:border-[#0866C6]/30 transition-all duration-200 flex flex-col justify-between group cursor-pointer active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-[#0866C6] h-full"
                 role="button"
                 tabIndex={0}
                 aria-label={`Open details for ${card.heading}`}
@@ -348,11 +349,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   }
                 }}
               >
-                <div>
+                <div className="h-full flex flex-col justify-between">
                   {/* Card Illustration Banner:
-                      - Mobile: compact (h-16 / 64px) to ensure 4-6 cards fit in mobile viewport
-                      - Desktop: spacious (h-36 to h-44) retaining original proportions */}
-                  <div className="w-full h-16 sm:h-36 lg:h-44 rounded-xl sm:rounded-2xl overflow-hidden bg-[#F0F6FD] mb-1.5 sm:mb-4 border border-[#EAF2FC]">
+                      - Mobile: landscape aspect ratio (aspect-[16/10]) so artwork is landscape and exactly 6 cards fit on page one
+                      - Desktop: spacious (h-36 to h-44) */}
+                  <div className="w-full aspect-[16/10] sm:aspect-auto sm:h-36 lg:h-44 rounded-xl sm:rounded-2xl overflow-hidden bg-[#F0F6FD] mb-2 sm:mb-4 border border-[#EAF2FC] shrink-0">
                     <img
                       src={card.image}
                       alt={card.alt}
@@ -362,24 +363,26 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                     />
                   </div>
 
-                  {/* Card Title & Expand Arrow */}
-                  <div className="flex items-center justify-between gap-1 sm:gap-3 pt-0.5 sm:pt-1">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-xs sm:text-lg lg:text-[19px] font-bold text-[#062B50] tracking-tight group-hover:text-[#0866C6] transition-colors line-clamp-2 leading-tight">
+                  {/* Card Title, Tagline & Expand Arrow */}
+                  <div className="flex items-end justify-between gap-1.5 sm:gap-3 flex-1 pt-0.5 sm:pt-1">
+                    <div className="min-w-0 flex-1 flex flex-col justify-between">
+                      <h3 className="text-xs sm:text-base lg:text-[18px] font-bold text-[#062B50] tracking-tight group-hover:text-[#0866C6] transition-colors line-clamp-1 leading-tight mb-1">
                         {card.heading}
                       </h3>
-                      {/* Tagline snippet: visible on desktop/tablet, hidden on compact mobile */}
-                      <p className="hidden sm:block text-[13px] lg:text-[13.5px] text-[#5A6E85] mt-1 line-clamp-2 leading-snug">
-                        "{card.tagline}"
-                      </p>
+                      {/* Consistent two-line area for descriptions across all cards */}
+                      <div className="h-[28px] sm:h-[34px] lg:h-[38px] flex items-start overflow-hidden">
+                        <p className="text-[10px] sm:text-xs lg:text-[13px] text-[#5A6E85] line-clamp-2 leading-snug">
+                          "{card.tagline}"
+                        </p>
+                      </div>
                     </div>
 
                     {/* Small circular arrow indicating expansion */}
                     <div
-                      className="w-5 h-5 sm:w-9 sm:h-9 lg:w-10 lg:h-10 rounded-full bg-[#EBF4FE] text-[#0866C6] group-hover:bg-[#0866C6] group-hover:text-white transition-all flex items-center justify-center shrink-0 shadow-xs group-hover:translate-x-0.5"
+                      className="w-6 h-6 sm:w-8 sm:h-8 lg:w-9 lg:h-9 rounded-full bg-[#EBF4FE] text-[#0866C6] group-hover:bg-[#0866C6] group-hover:text-white transition-all flex items-center justify-center shrink-0 mb-0.5 shadow-2xs group-hover:translate-x-0.5"
                       aria-hidden="true"
                     >
-                      <ArrowRight className="w-2.5 h-2.5 sm:w-4 sm:h-4" />
+                      <ArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                     </div>
                   </div>
                 </div>
@@ -387,22 +390,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             ))}
           </div>
 
-          {/* Section Bottom CTA Callout */}
-          <div className="mt-10 sm:mt-16 text-center bg-[#F4F8FD] rounded-3xl p-6 sm:p-10 border border-[#E8F3FF] max-w-3xl mx-auto">
-            <h3 className="text-lg sm:text-2xl font-bold text-[#062B50] mb-2 tracking-tight">
+          {/* Section Bottom Reassurance Callout (Removed "Explore what's on your mind" button) */}
+          <div className="mt-8 sm:mt-14 text-center bg-[#F4F8FD] rounded-3xl p-6 sm:p-8 border border-[#E8F3FF] max-w-2xl mx-auto">
+            <h3 className="text-lg sm:text-xl font-bold text-[#062B50] mb-1.5 tracking-tight">
               Ready to explore what matters to you?
             </h3>
-            <p className="text-xs sm:text-base text-[#5A6E85] mb-5 sm:mb-6 max-w-xl mx-auto leading-relaxed">
+            <p className="text-xs sm:text-sm text-[#5A6E85] max-w-lg mx-auto leading-relaxed">
               No grades, no expectations—just a quiet, structured space to discover your genuine strengths and interests.
             </p>
-            <button
-              type="button"
-              onClick={handleExploreYourself}
-              className="w-full sm:w-auto min-h-[48px] px-8 py-3.5 rounded-2xl bg-[#0866C6] text-white font-bold text-sm sm:text-base hover:bg-[#062B50] active:scale-[0.98] transition-all shadow-md shadow-[#0866C6]/25 focus-visible:outline-2 focus-visible:outline-[#0866C6] cursor-pointer inline-flex items-center justify-center gap-2"
-            >
-              <span>Explore what's on your mind</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
           </div>
         </div>
       </section>

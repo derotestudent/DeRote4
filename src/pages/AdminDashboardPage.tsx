@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   RotateCcw,
-  Printer,
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
@@ -27,7 +26,6 @@ import {
   QuestionnaireStatus,
   fetchAllStudentsWithStatus,
   updateStudentProfileByAdmin,
-  getReportTitle,
   formatClassDisplay,
   normalizeClassGrade,
 } from '../services/studentAdminService';
@@ -37,8 +35,6 @@ import {
   onAdminAuthChange,
   AdminAccount,
 } from '../services/adminService';
-import { PrintableReport } from '../components/PrintableReport';
-import { executePrint } from '../utils/printHelper';
 
 interface AdminDashboardPageProps {
   onNavigate: (route: string) => void;
@@ -240,27 +236,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
     }
   };
 
-  // Context-aware report title for print
-  const reportTitle = useMemo(() => {
-    return getReportTitle({
-      view: selectedStudent ? 'detail' : 'list',
-      student: selectedStudent,
-      classFilter,
-      statusFilter,
-      searchQuery,
-    });
-  }, [selectedStudent, classFilter, statusFilter, searchQuery]);
-
-  const handlePrint = () => {
-    executePrint(reportTitle);
-  };
-
-  const currentDateFormatted = new Date().toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
-
   if (!admin) {
     return null;
   }
@@ -403,14 +378,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     <ChevronRight className="w-4 h-4" />
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={handlePrint}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0866C6] text-white text-xs sm:text-sm font-bold hover:bg-[#062B50] transition-colors shadow-sm cursor-pointer ml-1"
-                  >
-                    <Printer className="w-4 h-4" />
-                    <span>Print Report</span>
-                  </button>
                 </div>
               </div>
 
@@ -462,10 +429,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                   </button>
                 </div>
 
-                {/* Profile Fields Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-6">
-                  <div className="p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-[#64778C] mb-1">
+                {/* Profile Fields Grid - Mobile Responsive 2-column layout */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 pt-6">
+                  <div className="col-span-2 sm:col-span-1 lg:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
                       <User className="w-3.5 h-3.5 text-[#0866C6]" />
                       <span>Student Name</span>
                     </div>
@@ -474,8 +441,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-[#64778C] mb-1">
+                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
                       <Clock className="w-3.5 h-3.5 text-[#0866C6]" />
                       <span>Age</span>
                     </div>
@@ -484,8 +451,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-[#64778C] mb-1">
+                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
                       <BookOpen className="w-3.5 h-3.5 text-[#0866C6]" />
                       <span>Class / Grade</span>
                     </div>
@@ -494,12 +461,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-[#64778C] mb-1">
+                  <div className="col-span-2 sm:col-span-1 lg:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
                       <School className="w-3.5 h-3.5 text-[#0866C6]" />
                       <span>Institution / School</span>
                     </div>
-                    <div className="text-sm font-bold text-[#062B50] truncate" title={selectedStudent.schoolName}>
+                    <div className="text-sm font-bold text-[#062B50] break-words" title={selectedStudent.schoolName}>
                       {selectedStudent.schoolName}
                     </div>
                   </div>
@@ -681,7 +648,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
             /* 3. MAIN DASHBOARD — STUDENT LIST VIEW                         */
             /* ============================================================== */
             <div className="space-y-8">
-              {/* Dashboard Heading & Print button */}
+              {/* Dashboard Heading */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight">
@@ -691,15 +658,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     Manage student registration details and inspect submitted self-discovery responses.
                   </p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={handlePrint}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs sm:text-sm font-bold transition-all shadow-md shadow-[#0866C6]/20 cursor-pointer w-fit"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Print Report</span>
-                </button>
               </div>
 
               {/* Top Metric Cards */}
@@ -1057,32 +1015,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* 5. CONTEXT-AWARE PRINT REPORT                                  */}
-      {/* ============================================================== */}
-      {selectedStudent ? (
-        <PrintableReport
-          type="individual-student"
-          title={reportTitle}
-          student={{
-            fullName: selectedStudent.fullName,
-            age: selectedStudent.age,
-            classGrade: selectedStudent.classGrade,
-            schoolName: selectedStudent.schoolName,
-            status: selectedStudent.status,
-            submittedAt: selectedStudent.submittedAt,
-            answers: selectedStudent.answers,
-          }}
-          date={currentDateFormatted}
-        />
-      ) : (
-        <PrintableReport
-          type="student-list"
-          title={reportTitle}
-          students={filteredStudents}
-          date={currentDateFormatted}
-        />
-      )}
     </div>
   );
 };

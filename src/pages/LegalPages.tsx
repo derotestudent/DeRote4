@@ -55,8 +55,8 @@ export const ConsentNoticePage: React.FC<LegalPageProps> = ({ onNavigate }) => {
           <section className="bg-[#F8FAFD] p-6 rounded-2xl border border-[#E8F3FF]">
             <h2 className="text-lg font-bold text-[#062B50] mb-2">1. Nature of the Experience</h2>
             <p>
-              DeRote is an educational self-reflection experience designed for school students in Classes 8, 9,
-              and 10. It is <strong>not an examination, intelligence quotient test, or mental health diagnostic tool</strong>.
+              DeRote is an educational self-reflection experience designed for students across all grades and learning stages.
+              It is <strong>not an examination, intelligence quotient test, or mental health diagnostic tool</strong>.
               There are no scores, grades, cut-offs, or pass/fail criteria.
             </p>
           </section>

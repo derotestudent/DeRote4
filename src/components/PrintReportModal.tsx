@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Printer, Download } from 'lucide-react';
+import { X, Download } from 'lucide-react';
 
 interface PrintReportModalProps {
   isOpen: boolean;
@@ -24,10 +24,6 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   return (
     <div
       role="dialog"
@@ -43,14 +39,6 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="px-3 py-1.5 rounded-xl bg-white border border-[#D5E4F3] text-xs font-bold text-[#062B50] hover:bg-[#F2F7FC] flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Printer className="w-4 h-4 text-[#0866C6]" />
-              <span>Print</span>
-            </button>
 
             {onDownloadPdf && (
               <button

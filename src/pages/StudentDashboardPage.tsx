@@ -22,7 +22,6 @@ import {
   FileText,
   Loader2,
   Check,
-  Printer,
 } from 'lucide-react';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
 import {
@@ -44,8 +43,6 @@ import {
 } from '../services/api';
 import { SECTIONS, QUESTIONS } from '../data/questionnaire';
 import { resetStudentQuestionnaireSession } from '../services/questionnaireService';
-import { PrintableReport } from '../components/PrintableReport';
-import { executePrint } from '../utils/printHelper';
 
 interface StudentDashboardPageProps {
   onNavigate: (route: string) => void;
@@ -285,10 +282,12 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
     onNavigate('/login');
   };
 
-  const handlePrintMyResponses = () => {
-    const reportTitle = `STUDENT REPORT — ${studentDisplayName.toUpperCase()}`;
-    executePrint(reportTitle);
-  };
+  const studentInitials = useMemo(() => {
+    if (!student?.fullName) return 'ST';
+    const parts = student.fullName.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }, [student?.fullName]);
 
   const formattedSubmittedDate = useMemo(() => {
     if (!submissionData?.submittedAt) return 'Recently';
@@ -323,10 +322,8 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#F2F7FC]/80 via-white to-[#F4F8FD] text-[#102C46]">
-      {/* Screen Interface - cleanly hidden during print */}
-      <div className="print:hidden flex flex-col min-h-screen">
-        {/* Top Header Bar (No duplicate Edit Profile button here) */}
-        <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-[#E8F3FF] transition-colors">
+      {/* Top Header Bar (No duplicate Edit Profile button here) */}
+      <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-md border-b border-[#E8F3FF] transition-colors">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button
@@ -454,72 +451,87 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
               </div>
             </div>
 
-            {/* Profile Card with the ONE Edit Profile button */}
-            <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E2EDF8] shadow-sm">
-              <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#EAF2FC]">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-[#EBF4FE] text-[#0866C6] flex items-center justify-center">
-                    <User className="w-4 h-4" />
+            {/* Student Profile Card - Mobile-First & Beautifully Integrated */}
+            <div className="bg-white rounded-3xl border border-[#CCE3FC] p-4 sm:p-6 shadow-sm overflow-hidden">
+              <div className="flex items-center justify-between gap-3 pb-3.5 mb-3.5 border-b border-[#EAF2FC]">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-[#0866C6] to-[#043F7D] text-white flex items-center justify-center font-extrabold text-sm sm:text-base shrink-0 shadow-sm shadow-[#0866C6]/20">
+                    {studentInitials}
                   </div>
-                  <span className="text-xs font-extrabold uppercase tracking-wider text-[#062B50]">
-                    Student Profile
-                  </span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h2 className="text-sm sm:text-base font-extrabold text-[#062B50] truncate">
+                        {studentDisplayName}
+                      </h2>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#EBF4FE] text-[#0866C6] shrink-0">
+                        {studentClass}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#64778C] truncate mt-0.5">
+                      Student Profile Details
+                    </p>
+                  </div>
                 </div>
 
-                {/* THE ONLY EDIT PROFILE BUTTON */}
                 <button
                   type="button"
                   onClick={() => onNavigate('/profile/edit')}
-                  className="px-3.5 py-1.5 rounded-xl border border-[#CCE3FC] bg-[#EBF4FE] hover:bg-[#0866C6] text-[#0866C6] hover:text-white text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-[#CCE3FC] bg-[#F2F7FC] hover:bg-[#0866C6] text-[#0866C6] hover:text-white text-xs font-bold transition-all inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 shadow-2xs"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                   <span>Edit Profile</span>
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
-                    <User className="w-3 h-3 text-[#0866C6]" />
-                    <span>Name</span>
-                  </span>
-                  <p className="text-sm sm:text-base font-bold text-[#062B50] truncate">
-                    {studentDisplayName}
-                  </p>
-                  <span className="inline-block text-[10px] text-[#8EA3B8]">Verified &amp; Fixed</span>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
-                    <Calendar className="w-3 h-3 text-[#0866C6]" />
-                    <span>Age</span>
-                  </span>
-                  <p className="text-sm sm:text-base font-bold text-[#062B50]">
+              {/* 2-Column Responsive Credential Grid for Mobile */}
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
+                {/* Age */}
+                <div className="p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C] mb-1">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-[#0866C6]" />
+                      <span>Age</span>
+                    </span>
+                    <span className="text-[10px] font-semibold text-[#0866C6] bg-[#EBF4FE] px-1.5 py-0.5 rounded">
+                      Editable
+                    </span>
+                  </div>
+                  <div className="text-sm sm:text-base font-bold text-[#062B50] mt-0.5">
                     {studentAge} years old
-                  </p>
-                  <span className="inline-block text-[10px] text-[#0866C6]">Editable</span>
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
-                    <BookOpen className="w-3 h-3 text-[#0866C6]" />
-                    <span>Class</span>
-                  </span>
-                  <p className="text-sm sm:text-base font-bold text-[#062B50]">
+                {/* Class / Grade */}
+                <div className="p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C] mb-1">
+                    <span className="flex items-center gap-1">
+                      <BookOpen className="w-3.5 h-3.5 text-[#0866C6]" />
+                      <span>Class</span>
+                    </span>
+                    <span className="text-[10px] font-semibold text-[#0866C6] bg-[#EBF4FE] px-1.5 py-0.5 rounded">
+                      Editable
+                    </span>
+                  </div>
+                  <div className="text-sm sm:text-base font-bold text-[#062B50] mt-0.5">
                     {studentClass}
-                  </p>
-                  <span className="inline-block text-[10px] text-[#0866C6]">Editable</span>
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
-                    <School className="w-3 h-3 text-[#0866C6]" />
-                    <span>School / Institution</span>
-                  </span>
-                  <p className="text-sm sm:text-base font-bold text-[#062B50] truncate" title={studentSchool}>
+                {/* School / Institution - Spans full width on mobile for long school names */}
+                <div className="col-span-2 p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C]">
+                    <span className="flex items-center gap-1">
+                      <School className="w-3.5 h-3.5 text-[#0866C6]" />
+                      <span>School / Institution</span>
+                    </span>
+                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">
+                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                      Verified
+                    </span>
+                  </div>
+                  <div className="text-xs sm:text-sm font-bold text-[#062B50] leading-snug break-words" title={studentSchool}>
                     {studentSchool}
-                  </p>
-                  <span className="inline-block text-[10px] text-[#8EA3B8]">Verified &amp; Fixed</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -554,100 +566,101 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                     </p>
                   </div>
 
-                  {/* Primary Action Buttons: View My Answers & Print My Responses */}
-                  <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                  {/* Primary Action Button: View My Answers ONLY */}
+                  <div className="flex items-center shrink-0 w-full sm:w-auto">
                     <button
                       type="button"
                       onClick={() => handleOpenAnswersModal(1)}
-                      className="min-h-[46px] px-6 py-2.5 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs sm:text-sm font-bold transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] cursor-pointer inline-flex items-center gap-2"
+                      className="w-full sm:w-auto min-h-[46px] px-6 py-2.5 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs sm:text-sm font-bold transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] cursor-pointer inline-flex items-center justify-center gap-2"
                     >
                       <Eye className="w-4 h-4" />
                       <span>View My Answers</span>
                     </button>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                    <button
-                      type="button"
-                      onClick={handlePrintMyResponses}
-                      className="min-h-[46px] px-5 py-2.5 rounded-xl border border-[#CCE3FC] bg-white hover:bg-[#F2F7FC] text-[#062B50] hover:text-[#0866C6] text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-[0.98] cursor-pointer inline-flex items-center gap-2"
-                      title="Print or Save as PDF your complete submitted questionnaire"
-                    >
-                      <Printer className="w-4 h-4 text-[#0866C6]" />
-                      <span>Print My Responses</span>
-                    </button>
+            {/* Student Profile Card - Mobile-First & Beautifully Integrated */}
+            <div className="bg-white rounded-3xl border border-[#CCE3FC] p-4 sm:p-6 shadow-sm overflow-hidden">
+              <div className="flex items-center justify-between gap-3 pb-3.5 mb-3.5 border-b border-[#EAF2FC]">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-[#0866C6] to-[#043F7D] text-white flex items-center justify-center font-extrabold text-sm sm:text-base shrink-0 shadow-sm shadow-[#0866C6]/20">
+                    {studentInitials}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h2 className="text-sm sm:text-base font-extrabold text-[#062B50] truncate">
+                        {studentDisplayName}
+                      </h2>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#EBF4FE] text-[#0866C6] shrink-0">
+                        {studentClass}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#64778C] truncate mt-0.5">
+                      Student Profile Details
+                    </p>
                   </div>
                 </div>
 
-                {/* Profile Information Card with THE ONLY Edit Profile button */}
-                <div className="p-5 sm:p-6 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8]">
-                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-[#EAF2FC]">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-[#EBF4FE] text-[#0866C6] flex items-center justify-center">
-                        <User className="w-4 h-4" />
-                      </div>
-                      <span className="text-xs font-extrabold uppercase tracking-wider text-[#062B50]">
-                        Student Profile Details
-                      </span>
-                    </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/profile/edit')}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-[#CCE3FC] bg-[#F2F7FC] hover:bg-[#0866C6] text-[#0866C6] hover:text-white text-xs font-bold transition-all inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 shadow-2xs"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit Profile</span>
+                </button>
+              </div>
 
-                    {/* THE ONLY EDIT PROFILE BUTTON */}
-                    <button
-                      type="button"
-                      onClick={() => onNavigate('/profile/edit')}
-                      className="px-3.5 py-1.5 rounded-xl border border-[#CCE3FC] bg-[#EBF4FE] hover:bg-[#0866C6] text-[#0866C6] hover:text-white text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>Edit Profile</span>
-                    </button>
+              {/* 2-Column Responsive Credential Grid for Mobile */}
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
+                {/* Age */}
+                <div className="p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C] mb-1">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-[#0866C6]" />
+                      <span>Age</span>
+                    </span>
+                    <span className="text-[10px] font-semibold text-[#0866C6] bg-[#EBF4FE] px-1.5 py-0.5 rounded">
+                      Editable
+                    </span>
                   </div>
+                  <div className="text-sm sm:text-base font-bold text-[#062B50] mt-0.5">
+                    {studentAge} years old
+                  </div>
+                </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {/* Name */}
-                    <div className="space-y-1">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
-                        <User className="w-3 h-3 text-[#0866C6]" />
-                        <span>Student Name</span>
-                      </span>
-                      <p className="text-sm sm:text-base font-bold text-[#062B50] truncate">
-                        {studentDisplayName}
-                      </p>
-                      <span className="inline-block text-[10px] text-[#8EA3B8]">Verified &amp; Fixed</span>
-                    </div>
+                {/* Class / Grade */}
+                <div className="p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C] mb-1">
+                    <span className="flex items-center gap-1">
+                      <BookOpen className="w-3.5 h-3.5 text-[#0866C6]" />
+                      <span>Class</span>
+                    </span>
+                    <span className="text-[10px] font-semibold text-[#0866C6] bg-[#EBF4FE] px-1.5 py-0.5 rounded">
+                      Editable
+                    </span>
+                  </div>
+                  <div className="text-sm sm:text-base font-bold text-[#062B50] mt-0.5">
+                    {studentClass}
+                  </div>
+                </div>
 
-                    {/* Age */}
-                    <div className="space-y-1">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-[#0866C6]" />
-                        <span>Age</span>
-                      </span>
-                      <p className="text-sm sm:text-base font-bold text-[#062B50]">
-                        {studentAge} years old
-                      </p>
-                      <span className="inline-block text-[10px] text-[#0866C6]">Editable in Profile</span>
-                    </div>
-
-                    {/* Class */}
-                    <div className="space-y-1">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
-                        <BookOpen className="w-3 h-3 text-[#0866C6]" />
-                        <span>Class / Grade</span>
-                      </span>
-                      <p className="text-sm sm:text-base font-bold text-[#062B50]">
-                        {studentClass}
-                      </p>
-                      <span className="inline-block text-[10px] text-[#0866C6]">Editable in Profile</span>
-                    </div>
-
-                    {/* School / Institution */}
-                    <div className="space-y-1">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-[#8EA3B8] flex items-center gap-1">
-                        <School className="w-3 h-3 text-[#0866C6]" />
-                        <span>School / Institution</span>
-                      </span>
-                      <p className="text-sm sm:text-base font-bold text-[#062B50] truncate" title={studentSchool}>
-                        {studentSchool}
-                      </p>
-                      <span className="inline-block text-[10px] text-[#8EA3B8]">Verified &amp; Fixed</span>
-                    </div>
+                {/* School / Institution - Spans full width on mobile for long school names */}
+                <div className="col-span-2 p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C]">
+                    <span className="flex items-center gap-1">
+                      <School className="w-3.5 h-3.5 text-[#0866C6]" />
+                      <span>School / Institution</span>
+                    </span>
+                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">
+                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                      Verified
+                    </span>
+                  </div>
+                  <div className="text-xs sm:text-sm font-bold text-[#062B50] leading-snug break-words" title={studentSchool}>
+                    {studentSchool}
                   </div>
                 </div>
               </div>
@@ -714,16 +727,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handlePrintMyResponses}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#CCE3FC] bg-[#F2F7FC] hover:bg-[#EBF4FE] text-xs font-bold text-[#0866C6] transition-colors cursor-pointer"
-                  title="Print My Responses"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Print Responses</span>
-                </button>
-
                 <button
                   type="button"
                   onClick={() => setShowAnswersModal(false)}
@@ -946,30 +949,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
           </div>
         </div>
       )}
-      </div>
-
-      {/* ========================================================= */}
-      {/* PERSONAL PRINT REPORT                                    */}
-      {/* ========================================================= */}
-      <PrintableReport
-        type="individual-student"
-        title={`STUDENT REPORT — ${studentDisplayName.toUpperCase()}`}
-        student={{
-          fullName: studentDisplayName,
-          age: studentAge,
-          classGrade: student?.classGrade || '10',
-          schoolName: studentSchool,
-          status: isCompleted ? 'Submitted' : Object.keys(allAnswers).length > 0 ? 'In Progress' : 'Not Started',
-          submittedAt: submissionData?.submittedAt,
-          answers: allAnswers,
-        }}
-        date={new Date().toLocaleDateString('en-US', {
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric',
-        })}
-        isStudentSelfView={true}
-      />
     </div>
   );
 };

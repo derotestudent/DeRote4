@@ -11,7 +11,6 @@ import {
   PlayCircle,
   HeartHandshake,
   Download,
-  Printer,
   Sparkles,
   ArrowLeft,
   CheckCircle2,
@@ -42,10 +41,6 @@ export const StudentInsightDashboard: React.FC<StudentInsightDashboardProps> = (
     exportStudentReportPdf(report);
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       {/* Top action header */}
@@ -66,13 +61,6 @@ export const StudentInsightDashboard: React.FC<StudentInsightDashboardProps> = (
           >
             <Download className="w-4 h-4" />
             Download PDF Report
-          </button>
-          <button
-            onClick={handlePrint}
-            className="inline-flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-semibold text-[#062B50] bg-white border border-[#D5E9FF] hover:bg-[#F0F5FA] rounded-xl transition-all cursor-pointer"
-          >
-            <Printer className="w-4 h-4" />
-            Print
           </button>
         </div>
       </div>
