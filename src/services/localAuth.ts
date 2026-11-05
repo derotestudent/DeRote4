@@ -7,6 +7,8 @@
  */
 
 import { saveStudentProfileToBackend } from './firestoreBackend';
+import { signOut } from 'firebase/auth';
+import { auth } from './firebase';
 
 export interface LocalStudentAccount {
   id: string;
@@ -464,6 +466,11 @@ export async function upgradeStudentEmail(
 }
 
 export async function logoutStudent(): Promise<void> {
+  try {
+    await signOut(auth);
+  } catch (err) {
+    console.warn('Firebase sign out warning:', err);
+  }
   setStoredStudent(null);
 }
 

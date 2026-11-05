@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   ArrowLeft,
   Mail,
-  Phone,
   Lock,
   User,
   CheckCircle2,
@@ -10,13 +9,18 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  ExternalLink,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
 import { Footer } from '../components/Footer';
 import {
-  createStudentAccount,
-  loginStudent,
-} from '../services/localAuth';
+  signInStudentWithEmail,
+  signInStudentWithGoogle,
+  registerStudentWithEmail,
+} from '../services/firebaseAuth';
+import { loginStudent } from '../services/localAuth';
 
 interface AuthPageProps {
   initialMode?: 'login' | 'signup';
@@ -29,15 +33,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 }) => {
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
 
-  // Sign In fields: email, registered mobile number, password
+  // Sign In fields: ONLY Email and Password
   const [signInEmail, setSignInEmail] = useState('');
-  const [signInMobile, setSignInMobile] = useState('');
   const [signInPassword, setSignInPassword] = useState('');
   const [showSignInPassword, setShowSignInPassword] = useState(false);
 
-  // Create Account fields: name, email address or phone number, password, confirm password
+  // Create Account fields: Name, Email, Password, Confirm Password
   const [signupName, setSignupName] = useState('');
-  const [signupEmailOrPhone, setSignupEmailOrPhone] = useState('');
+  const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
   const [showSignupPassword, setShowSignupPassword] = useState(false);
@@ -45,22 +48,31 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
   // Status & loading
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: 'error' | 'success';
     text: string;
   } | null>(null);
 
+  const handleRedirect = () => {
+    const target = sessionStorage.getItem('derote_auth_redirect') || '/dashboard';
+    sessionStorage.removeItem('derote_auth_redirect');
+    setTimeout(() => onNavigate(target), 350);
+  };
+
+  // 1. Email and Password Sign In
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatusMessage(null);
 
     const emailTrim = signInEmail.trim();
-    const mobileTrim = signInMobile.trim();
 
-    if (!emailTrim && !mobileTrim) {
+    if (!emailTrim) {
       setStatusMessage({
         type: 'error',
-        text: 'Please enter your email or registered mobile number.',
+        text: 'Please enter your email address.',
       });
       return;
     }
@@ -75,16 +87,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
     setIsLoading(true);
     try {
-      const identifier = emailTrim || mobileTrim;
-      const res = await loginStudent(identifier, signInPassword, mobileTrim);
+      const res = await signInStudentWithEmail(emailTrim, signInPassword);
       if (res.success) {
         setStatusMessage({
           type: 'success',
-          text: 'Welcome back! Opening your session...',
+          text: `Welcome back, ${res.student?.fullName || 'Student'}! Opening your session...`,
         });
-        const target = sessionStorage.getItem('derote_auth_redirect') || '/dashboard';
-        sessionStorage.removeItem('derote_auth_redirect');
-        setTimeout(() => onNavigate(target), 350);
+        handleRedirect();
       } else {
         setStatusMessage({
           type: 'error',
@@ -101,23 +110,55 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
+  // 2. Google Direct Sign In
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoading(true);
+    setStatusMessage(null);
+
+    try {
+      const res = await signInStudentWithGoogle();
+      if (res.success) {
+        setUnauthorizedDomain(null);
+        setStatusMessage({
+          type: 'success',
+          text: `Welcome, ${res.student?.fullName || 'Student'}! Signed in with Google.`,
+        });
+        handleRedirect();
+      } else {
+        if (res.errorCode === 'auth/unauthorized-domain') {
+          const currentHostname = res.domain || (typeof window !== 'undefined' ? window.location.hostname : '');
+          setUnauthorizedDomain(currentHostname);
+        }
+        setStatusMessage({
+          type: 'error',
+          text: res.error || 'Google sign in could not be completed.',
+        });
+      }
+    } catch {
+      setStatusMessage({
+        type: 'error',
+        text: 'Failed to authenticate with Google. Please try again.',
+      });
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
+  // 3. Demo Student Quick Access
   const handleDemoStudentLogin = async () => {
     setIsLoading(true);
     setStatusMessage(null);
     setSignInEmail('student@derote.in');
     setSignInPassword('student123');
-    setSignInMobile('9876543210');
 
     try {
-      const res = await loginStudent('student@derote.in', 'student123', '9876543210');
+      const res = await loginStudent('student@derote.in', 'student123');
       if (res.success) {
         setStatusMessage({
           type: 'success',
           text: 'Welcome Aarav! Logged in with Demo Student account.',
         });
-        const target = sessionStorage.getItem('derote_auth_redirect') || '/dashboard';
-        sessionStorage.removeItem('derote_auth_redirect');
-        setTimeout(() => onNavigate(target), 350);
+        handleRedirect();
       } else {
         setStatusMessage({
           type: 'error',
@@ -134,26 +175,27 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
+  // 4. Create Account with Email and Password
   const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatusMessage(null);
 
     const nameTrim = signupName.trim();
-    const contactTrim = signupEmailOrPhone.trim();
+    const emailTrim = signupEmail.trim();
 
     if (!nameTrim) {
       setStatusMessage({ type: 'error', text: 'Please enter your full name.' });
       return;
     }
-    if (!contactTrim) {
+    if (!emailTrim) {
       setStatusMessage({
         type: 'error',
-        text: 'Please enter your email address or phone number.',
+        text: 'Please enter your email address.',
       });
       return;
     }
-    if (!signupPassword) {
-      setStatusMessage({ type: 'error', text: 'Please enter a password.' });
+    if (!signupPassword || signupPassword.length < 6) {
+      setStatusMessage({ type: 'error', text: 'Password must be at least 6 characters.' });
       return;
     }
     if (signupPassword !== signupConfirmPassword) {
@@ -163,24 +205,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
     setIsLoading(true);
     try {
-      const res = await createStudentAccount({
-        fullName: nameTrim,
-        emailOrPhone: contactTrim,
-        password: signupPassword,
-      });
+      const res = await registerStudentWithEmail(nameTrim, emailTrim, signupPassword);
 
       if (res.success) {
         setStatusMessage({
           type: 'success',
           text: 'Account created successfully! Welcome to DeRote.',
         });
-        const target = sessionStorage.getItem('derote_auth_redirect') || '/dashboard';
-        sessionStorage.removeItem('derote_auth_redirect');
-        setTimeout(() => onNavigate(target), 400);
+        handleRedirect();
       } else {
         setStatusMessage({
           type: 'error',
-          text: res.error || 'Could not create account. Please check details.',
+          text: res.error || 'Could not create account. Please check your details.',
         });
       }
     } catch {
@@ -257,12 +293,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             </h1>
             <p className="text-xs sm:text-sm text-[#5A6E85] mt-1.5 leading-relaxed">
               {mode === 'login'
-                ? 'Sign in to access your self-reflection journey.'
+                ? 'Sign in to access your reflective self-discovery journey.'
                 : 'Enter your details to create your student account.'}
             </p>
           </div>
 
-          {/* Status Message */}
+          {/* Status Feedback Message */}
           {statusMessage && (
             <div
               className={`mb-6 p-4 rounded-2xl text-xs sm:text-sm flex items-start gap-2.5 ${
@@ -280,7 +316,116 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             </div>
           )}
 
-          {/* Sign In Form */}
+          {/* Interactive Authorized Domain Helper Card */}
+          {unauthorizedDomain && (
+            <div className="mb-6 p-4.5 rounded-2xl bg-amber-50/90 border border-amber-300 text-left space-y-3 shadow-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-amber-900 font-bold text-xs sm:text-sm">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Authorize Domain in Firebase Console</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUnauthorizedDomain(null)}
+                  className="text-amber-700 hover:text-amber-900 text-xs font-semibold px-1.5 py-0.5 rounded cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+
+              <p className="text-xs text-amber-800 leading-relaxed">
+                Google OAuth requires your web app domain to be added to Authorized Domains in your Firebase project (takes 10 seconds):
+              </p>
+
+              <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-amber-300/80 font-mono text-xs text-slate-900">
+                <span className="flex-1 truncate font-semibold select-all">{unauthorizedDomain}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(unauthorizedDomain);
+                    }
+                    setCopiedDomain(true);
+                    setTimeout(() => setCopiedDomain(false), 2000);
+                  }}
+                  className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-bold cursor-pointer transition-colors"
+                >
+                  {copiedDomain ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-amber-800" />
+                      <span>Copy Domain</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <a
+                  href="https://console.firebase.google.com/project/gen-lang-client-0276070718/authentication/settings"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0866C6] hover:text-[#062B50] hover:underline"
+                >
+                  <span>Open Firebase Authorized Domains Settings</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+          )}
+
+          {/* Option: Sign in Directly with Google */}
+          <div className="mb-5">
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={isLoading || isGoogleLoading}
+              className="w-full min-h-[48px] py-2.5 px-4 rounded-xl border border-[#D5E4F3] bg-white hover:bg-[#F8FAFD] text-[#062B50] text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-3 shadow-xs hover:border-[#0866C6]/40 active:scale-[0.99] disabled:opacity-60"
+            >
+              {isGoogleLoading ? (
+                <>
+                  <Loader2 className="w-5 h-5 text-[#0866C6] animate-spin" />
+                  <span>Connecting with Google...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="#4285F4"
+                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                    />
+                  </svg>
+                  <span>{mode === 'login' ? 'Sign in with Google' : 'Sign up with Google'}</span>
+                </>
+              )}
+            </button>
+
+            <div className="relative flex py-4 items-center">
+              <div className="flex-grow border-t border-[#E8F3FF]"></div>
+              <span className="flex-shrink mx-3 text-[11px] text-[#64778C] font-semibold uppercase tracking-wider">
+                Or with email
+              </span>
+              <div className="flex-grow border-t border-[#E8F3FF]"></div>
+            </div>
+          </div>
+
+          {/* Mode 1: Sign In Form (ONLY Email and Password) */}
           {mode === 'login' ? (
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
@@ -294,25 +439,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     value={signInEmail}
                     onChange={(e) => setSignInEmail(e.target.value)}
                     placeholder="student@example.com"
-                    disabled={isLoading}
-                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">
-                  Registered Mobile Number
-                </label>
-                <div className="relative">
-                  <Phone className="w-4 h-4 text-[#64778C] absolute left-3.5 top-3.5" />
-                  <input
-                    type="tel"
-                    value={signInMobile}
-                    onChange={(e) => setSignInMobile(e.target.value.replace(/[^\d]/g, '').slice(0, 10))}
-                    placeholder="10-digit mobile number"
-                    disabled={isLoading}
-                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none transition-colors"
+                    disabled={isLoading || isGoogleLoading}
+                    required
+                    autoComplete="email"
+                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
                   />
                 </div>
               </div>
@@ -327,15 +457,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     type={showSignInPassword ? 'text' : 'password'}
                     value={signInPassword}
                     onChange={(e) => setSignInPassword(e.target.value)}
-                    placeholder="Enter password"
-                    disabled={isLoading}
+                    placeholder="Enter your password"
+                    disabled={isLoading || isGoogleLoading}
                     required
-                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none transition-colors"
+                    autoComplete="current-password"
+                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
                   />
                   <button
                     type="button"
                     onClick={() => setShowSignInPassword(!showSignInPassword)}
                     className="absolute right-3 top-3 text-[#64778C] hover:text-[#062B50] cursor-pointer"
+                    aria-label={showSignInPassword ? 'Hide password' : 'Show password'}
                   >
                     {showSignInPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -345,7 +477,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || isGoogleLoading}
                   className="w-full min-h-[48px] py-3 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
                 >
                   {isLoading ? (
@@ -361,14 +493,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
               <div className="relative flex py-1 items-center">
                 <div className="flex-grow border-t border-[#E8F3FF]"></div>
-                <span className="flex-shrink mx-3 text-[11px] text-[#64778C] font-semibold uppercase">Or</span>
+                <span className="flex-shrink mx-3 text-[11px] text-[#64778C] font-semibold uppercase">Or quick demo</span>
                 <div className="flex-grow border-t border-[#E8F3FF]"></div>
               </div>
 
               <button
                 type="button"
                 onClick={handleDemoStudentLogin}
-                disabled={isLoading}
+                disabled={isLoading || isGoogleLoading}
                 className="w-full min-h-[46px] py-2.5 px-4 rounded-xl bg-[#EBF4FE] hover:bg-[#D8E9FD] text-[#0866C6] text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 border border-[#0866C6]/25"
               >
                 <User className="w-4 h-4" />
@@ -376,11 +508,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </button>
             </form>
           ) : (
-            /* Create Account Form */
+            /* Mode 2: Create Account Form */
             <form onSubmit={handleSignupSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-[#062B50] mb-1.5">
-                  Name
+                  Full Name
                 </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-[#64778C] absolute left-3.5 top-3.5" />
@@ -388,28 +520,30 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     type="text"
                     value={signupName}
                     onChange={(e) => setSignupName(e.target.value)}
-                    placeholder="Full name"
-                    disabled={isLoading}
+                    placeholder="Your full name"
+                    disabled={isLoading || isGoogleLoading}
                     required
-                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none transition-colors"
+                    autoComplete="name"
+                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-[#062B50] mb-1.5">
-                  Email Address or Phone Number
+                  Email Address
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-[#64778C] absolute left-3.5 top-3.5" />
                   <input
-                    type="text"
-                    value={signupEmailOrPhone}
-                    onChange={(e) => setSignupEmailOrPhone(e.target.value)}
-                    placeholder="email@example.com or 10-digit number"
-                    disabled={isLoading}
+                    type="email"
+                    value={signupEmail}
+                    onChange={(e) => setSignupEmail(e.target.value)}
+                    placeholder="student@example.com"
+                    disabled={isLoading || isGoogleLoading}
                     required
-                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none transition-colors"
+                    autoComplete="email"
+                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
                   />
                 </div>
               </div>
@@ -424,15 +558,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     type={showSignupPassword ? 'text' : 'password'}
                     value={signupPassword}
                     onChange={(e) => setSignupPassword(e.target.value)}
-                    placeholder="Create a password"
-                    disabled={isLoading}
+                    placeholder="At least 6 characters"
+                    disabled={isLoading || isGoogleLoading}
                     required
-                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none transition-colors"
+                    minLength={6}
+                    autoComplete="new-password"
+                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
                   />
                   <button
                     type="button"
                     onClick={() => setShowSignupPassword(!showSignupPassword)}
                     className="absolute right-3 top-3 text-[#64778C] hover:text-[#062B50] cursor-pointer"
+                    aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
                   >
                     {showSignupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -450,14 +587,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     value={signupConfirmPassword}
                     onChange={(e) => setSignupConfirmPassword(e.target.value)}
                     placeholder="Confirm your password"
-                    disabled={isLoading}
+                    disabled={isLoading || isGoogleLoading}
                     required
-                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none transition-colors"
+                    minLength={6}
+                    autoComplete="new-password"
+                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     className="absolute right-3 top-3 text-[#64778C] hover:text-[#062B50] cursor-pointer"
+                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
                   >
                     {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -467,7 +607,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || isGoogleLoading}
                   className="w-full min-h-[48px] py-3 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
                 >
                   {isLoading ? (
