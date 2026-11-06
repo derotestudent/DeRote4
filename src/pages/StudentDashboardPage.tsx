@@ -253,6 +253,28 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
     }
   }, [submissionData?.submittedAt]);
 
+  const currentDateFormatted = useMemo(() => {
+    return new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }, []);
+
+  const studentDisplayName = student?.fullName || 'Student';
+  const studentSchool = student?.schoolName || '—';
+  const studentClass = student?.classGrade
+    ? student.classGrade === 'Others'
+      ? 'Others'
+      : `Class ${student.classGrade}`
+    : '—';
+  const studentAge = student?.age || '—';
+
+  const handlePrintReport = () => {
+    const title = `STUDENT REPORT — ${(studentDisplayName || 'STUDENT').toUpperCase()}`;
+    executePrint(title);
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#F2F7FC]/80 via-white to-[#F4F8FD] flex flex-col items-center justify-center p-6 text-[#102C46]">
@@ -264,28 +286,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
       </div>
     );
   }
-
-  const studentDisplayName = student?.fullName || 'Student';
-  const studentSchool = student?.schoolName || '—';
-  const studentClass = student?.classGrade
-    ? student.classGrade === 'Others'
-      ? 'Others'
-      : `Class ${student.classGrade}`
-    : '—';
-  const studentAge = student?.age || '—';
-
-  const currentDateFormatted = useMemo(() => {
-    return new Date().toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  }, []);
-
-  const handlePrintReport = () => {
-    const title = `STUDENT REPORT — ${(studentDisplayName || 'STUDENT').toUpperCase()}`;
-    executePrint(title);
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#F2F7FC]/80 via-white to-[#F4F8FD] text-[#102C46]">

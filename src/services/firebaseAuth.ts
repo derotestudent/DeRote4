@@ -228,16 +228,14 @@ export async function resolveStudentProfile(user: User): Promise<{
   const existing = outcome.profile;
   const isComplete = isStudentProfileComplete(existing);
 
-  // If complete, update lastLoginAt safely in background
-  if (isComplete) {
-    saveStudentProfileOutcome({
-      ...existing,
-      lastLoginAt: new Date().toISOString(),
-    }).catch(() => {});
-  }
+  // Update lastLoginAt in memory session cache
+  const activeProfile: LocalStudentAccount = {
+    ...existing,
+    lastLoginAt: new Date().toISOString(),
+  };
 
   return {
-    profile: existing,
+    profile: activeProfile,
     isComplete,
     isExistingInFirestore: true,
   };

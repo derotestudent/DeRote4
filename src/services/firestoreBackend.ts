@@ -20,7 +20,7 @@ import {
   updateDoc,
   deleteDoc,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import type { LocalStudentAccount } from './firebaseAuth';
 import type { StudentAnswers, SubmissionData, DraftData } from './api';
 import {
@@ -149,6 +149,19 @@ export async function fetchStudentProfileOutcome(studentId: string): Promise<Pro
 }
 
 /**
+ * Normalizes class format for security rules compatibility ('8', '9', '10', '11', '12', 'Higher', 'Others')
+ */
+export function normalizeClassGrade(grade?: string): string {
+  if (!grade) return 'Others';
+  const clean = grade.trim();
+  if (clean.toLowerCase().includes('higher')) return 'Higher';
+  if (clean.toLowerCase().includes('others')) return 'Others';
+  const numMatch = clean.match(/\b(8|9|10|11|12)\b/);
+  if (numMatch) return numMatch[1];
+  return clean;
+}
+
+/**
  * Saves a student profile into Firestore, returning clear error status if rejected by rules or network.
  */
 export async function saveStudentProfileOutcome(
@@ -159,23 +172,80 @@ export async function saveStudentProfileOutcome(
   }
   try {
     const studentRef = doc(db, COLLECTION_STUDENTS, student.id);
-    const cleanClass = student.classGrade ? student.classGrade.trim() : '';
+    const authUser = auth.currentUser;
+    const currentEmail = (authUser?.email || student.email || '').trim().toLowerCase();
+
+    // Normalize classGrade to canonical format: '8', '9', '10', '11', '12', 'Higher'
+    const rawClass = student.classGrade ? student.classGrade.trim() : '';
+    const cleanClass = normalizeClassGrade(rawClass);
+
+    // Normalize age to clean digits string ('8'..'25')
+    const rawAge = (student.age || '').trim();
+    const cleanAge = rawAge.replace(/[^\d]/g, '');
+
+    // Check if profile document already exists in Firestore
+    const existingSnap = await getDoc(studentRef);
+
+    if (existingSnap.exists()) {
+      // Document ALREADY exists in Firestore.
+      // Under published Firestore Security Rules:
+      // Students may change ONLY ['age', 'classGrade', 'updatedAt'].
+      // All other fields (fullName, email, schoolName, lastLoginAt, etc.) are strictly immutable.
+      const existingData = existingSnap.data();
+      const existingAge = (existingData.age || '').trim();
+      const existingClass = (existingData.classGrade || '').trim();
+
+      // Only perform cloud update if age or classGrade has actually changed
+      if (cleanAge && cleanClass && (cleanAge !== existingAge || cleanClass !== existingClass)) {
+        const updatedAt = new Date().toISOString();
+        await updateDoc(studentRef, {
+          age: cleanAge,
+          classGrade: cleanClass,
+          updatedAt,
+        });
+        return {
+          success: true,
+          profile: {
+            ...existingData,
+            ...student,
+            age: cleanAge,
+            classGrade: cleanClass,
+            updatedAt,
+          } as LocalStudentAccount,
+        };
+      }
+
+      // No mutable cloud fields changed; existing document is already valid in Firestore
+      return {
+        success: true,
+        profile: {
+          ...existingData,
+          ...student,
+          age: cleanAge || existingAge,
+          classGrade: cleanClass || existingClass,
+        } as LocalStudentAccount,
+      };
+    }
+
+    // Document does NOT exist yet. Perform initial creation strictly compliant with isValidStudentInitial
+    const now = new Date().toISOString();
     const payload = {
       id: student.id,
-      fullName: (student.fullName || '').trim(),
-      email: (student.email || '').trim().toLowerCase(),
-      age: (student.age || '').trim(),
+      fullName: (student.fullName || authUser?.displayName || 'Student').trim().slice(0, 128),
+      email: currentEmail,
+      age: cleanAge,
       classGrade: cleanClass,
-      schoolName: (student.schoolName || '').trim(),
-      phone: student.phone || '',
-      completedReflections: student.completedReflections ?? 0,
-      totalReflections: student.totalReflections ?? 13,
+      schoolName: (student.schoolName || '').trim().slice(0, 200),
+      phone: (student.phone || '').slice(0, 32),
+      completedReflections: 0,
+      totalReflections: 13,
       badge: cleanClass === 'Others' ? 'Student' : cleanClass ? `Class ${cleanClass} Student` : 'Student',
-      createdAt: student.createdAt || new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: student.createdAt || now,
+      lastLoginAt: now,
+      updatedAt: now,
     };
-    await setDoc(studentRef, payload, { merge: true });
+
+    await setDoc(studentRef, payload);
     return { success: true, profile: { ...student, ...payload } };
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code || 'unknown-error';

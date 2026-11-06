@@ -28,7 +28,79 @@ import {
 } from './services/localAuth';
 import { DESIGNATED_ADMIN_UID, isAuthenticationReady } from './services/firebaseAuth';
 
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Unhandled UI Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#F4F8FD] flex flex-col items-center justify-center p-6 text-[#102C46]">
+          <div className="max-w-md w-full bg-white rounded-3xl p-8 border border-[#CCE3FC] shadow-xl text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+              <ShieldAlert className="w-7 h-7" />
+            </div>
+            <h2 className="text-xl font-extrabold text-[#062B50]">Something went wrong</h2>
+            <p className="text-xs sm:text-sm text-[#5A6E85] leading-relaxed">
+              We encountered an unexpected display issue. Your saved reflection answers and account data remain completely safe.
+            </p>
+            <div className="flex flex-col gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  this.setState({ hasError: false });
+                  window.location.reload();
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-sm font-semibold transition cursor-pointer"
+              >
+                Reload Dashboard
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = '/';
+                }}
+                className="w-full py-2.5 px-4 rounded-xl border border-[#D5E4F3] text-sm text-[#64778C] hover:text-[#062B50] font-medium transition cursor-pointer"
+              >
+                Return to Home
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
+}
+
+function AppContent() {
   const [route, setRoute] = useState<string>(() => {
     const p = window.location.pathname;
     const h = window.location.hash;
