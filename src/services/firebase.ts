@@ -3,14 +3,16 @@ import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getAnalytics, isSupported, type Analytics } from "firebase/analytics";
 
+const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : ({} as Record<string, string | undefined>);
+
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyANTvGAKGqFadWROYMlElR6EDxtA1XaXtk",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "gen-lang-client-0276070718.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-0276070718",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "gen-lang-client-0276070718.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "558600646882",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:558600646882:web:d6c592c2d0ad3fbfb5aebb",
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-4XSMGZKH1X"
+  apiKey: env.VITE_FIREBASE_API_KEY || "AIzaSyANTvGAKGqFadWROYMlElR6EDxtA1XaXtk",
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || "gen-lang-client-0276070718.firebaseapp.com",
+  projectId: env.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-0276070718",
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || "gen-lang-client-0276070718.firebasestorage.app",
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || "558600646882",
+  appId: env.VITE_FIREBASE_APP_ID || "1:558600646882:web:d6c592c2d0ad3fbfb5aebb",
+  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || "G-4XSMGZKH1X"
 };
 
 // Initialize Firebase (singleton pattern)

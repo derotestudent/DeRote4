@@ -16,24 +16,26 @@ import {
 import { QUESTIONS } from '../data/questionnaire';
 import {
   getAllStudentsFromBackend,
-  getAllSubmissionsFromBackend,
-  updateStudentProfileInBackend,
+  adminUpdateStudentProfileOutcome,
+  getStudentSubmissionStatus,
+  getStudentFullQuestionnaireResponses,
 } from './firestoreBackend';
-import { type SubmissionData, getDraftStorageKey, getSubmissionStorageKey } from './api';
+import { getDraftStorageKey, getSubmissionStorageKey } from './api';
 
-export type QuestionnaireStatus = 'Not Started' | 'In Progress' | 'Submitted';
+export type QuestionnaireStatus = 'Not Started' | 'In Progress' | 'Submitted' | 'Unable to Load';
 
 export interface AdminStudentRecord {
   id: string;
   fullName: string;
   age: string;
-  classGrade: string; // '8', '9', '10', '11', '12', 'Others'
+  classGrade: string; // '8', '9', '10', '11', '12', 'Higher', 'Others'
   schoolName: string;
   email: string;
   phone?: string;
   status: QuestionnaireStatus;
   answeredCount: number;
   totalQuestions: number;
+  createdAt?: string;
   submittedAt?: string;
   updatedAt?: string;
   answers: Record<number, string | string[]>;
@@ -42,12 +44,8 @@ export interface AdminStudentRecord {
 const STORAGE_PREFIX_SUBMISSION = 'derote_questionnaire_submission_';
 const STORAGE_PREFIX_DRAFT = 'derote_questionnaire_draft_';
 
-
-
-
-
 /**
- * Normalizes class format for filter matching ('8', '9', '10', '11', '12', 'Others')
+ * Normalizes class format for filter matching ('8', '9', '10', '11', '12', 'Higher', 'Others')
  */
 export function normalizeClassGrade(grade?: string): string {
   if (!grade) return 'Others';
@@ -71,22 +69,19 @@ export function formatClassDisplay(grade?: string): string {
 }
 
 /**
- * Reads all registered student records and resolves their status and answers
+ * Reads all registered student profiles from Firestore backend.
+ * Performance Optimization:
+ * - Does NOT fetch all student submissions during directory initialization.
+ * - Does NOT load complete questionnaire answers into memory.
+ * - Answers are loaded on-demand only when opening an individual student.
  */
 export async function fetchAllStudentsWithStatus(): Promise<AdminStudentRecord[]> {
   let accounts = getStoredRegisteredAccounts();
-  const currentStudent = getCurrentStudent();
 
-  // Try fetching cloud students and submissions from Firestore backend
-  let cloudSubmissionsMap: Record<string, SubmissionData> | null = null;
+  // 1. Fetch student profiles from Firestore backend
   try {
-    const [cloudStudents, cloudSubs] = await Promise.all([
-      getAllStudentsFromBackend(),
-      getAllSubmissionsFromBackend(),
-    ]);
-
+    const cloudStudents = await getAllStudentsFromBackend();
     if (cloudStudents && cloudStudents.length > 0) {
-      // Merge cloud students into accounts
       const localMap = new Map(accounts.map((a) => [a.id, a]));
       for (const cs of cloudStudents) {
         if (!localMap.has(cs.id)) {
@@ -100,118 +95,43 @@ export async function fetchAllStudentsWithStatus(): Promise<AdminStudentRecord[]
       accounts = Array.from(localMap.values());
       saveRegisteredAccounts(accounts);
     }
-    cloudSubmissionsMap = cloudSubs;
   } catch (err) {
-    console.warn('Could not sync with Firestore backend during fetchAllStudentsWithStatus:', err);
+    console.warn('[StudentAdminService] Could not sync with Firestore backend during fetchAllStudentsWithStatus:', err);
   }
 
+  // 2. Build lightweight student directory records without loading full answers
   const records: AdminStudentRecord[] = accounts.map((acc) => {
-    let answers: Record<number, string | string[]> = {};
     let status: QuestionnaireStatus = 'Not Started';
     let submittedAt: string | undefined;
-    let updatedAt: string | undefined;
+    let updatedAt: string | undefined = acc.lastLoginAt;
 
-    // 0. Check Firestore cloud submissions map
-    if (cloudSubmissionsMap && cloudSubmissionsMap[acc.id]) {
-      const cloudSub = cloudSubmissionsMap[acc.id];
-      if (cloudSub.answers && Object.keys(cloudSub.answers).length > 0) {
-        answers = { ...cloudSub.answers };
-        status = 'Submitted';
-        submittedAt = cloudSub.submittedAt || acc.lastLoginAt;
-        updatedAt = cloudSub.submittedAt;
-      }
-    }
-
-    // 1. Try student-specific submission in localStorage
-    if (status !== 'Submitted') {
-      try {
-        const subRaw = localStorage.getItem(`${STORAGE_PREFIX_SUBMISSION}${acc.id}`);
-        if (subRaw) {
-          const parsed = JSON.parse(subRaw);
-          if (parsed.answers && Object.keys(parsed.answers).length > 0) {
-            answers = parsed.answers;
-            status = 'Submitted';
-            submittedAt = parsed.submittedAt || acc.lastLoginAt;
-            updatedAt = parsed.submittedAt;
-          }
+    // Check student-specific namespaced local submission cache
+    try {
+      const studentSubKey = getSubmissionStorageKey(acc.id);
+      const subRaw = localStorage.getItem(studentSubKey) || localStorage.getItem(`${STORAGE_PREFIX_SUBMISSION}${acc.id}`);
+      if (subRaw) {
+        const parsed = JSON.parse(subRaw);
+        if (parsed.submittedAt || (parsed.answers && Object.keys(parsed.answers).length > 0)) {
+          status = 'Submitted';
+          submittedAt = parsed.submittedAt;
+          updatedAt = parsed.submittedAt;
         }
-      } catch {}
-    }
-
-    // 2. Try student-specific draft in localStorage if not submitted
-    if (status !== 'Submitted') {
-      try {
-        const draftRaw = localStorage.getItem(`${STORAGE_PREFIX_DRAFT}${acc.id}`);
+      } else {
+        const studentDraftKey = getDraftStorageKey(acc.id);
+        const draftRaw = localStorage.getItem(studentDraftKey) || localStorage.getItem(`${STORAGE_PREFIX_DRAFT}${acc.id}`);
         if (draftRaw) {
           const parsed = JSON.parse(draftRaw);
           if (parsed.answers && Object.keys(parsed.answers).length > 0) {
-            answers = parsed.answers;
             status = 'In Progress';
             updatedAt = parsed.updatedAt;
           }
         }
-      } catch {}
-    }
-
-    // 3. Check student-specific namespaced local storage keys
-    if (status === 'Not Started') {
-      try {
-        const studentSubKey = getSubmissionStorageKey(acc.id);
-        const subRaw = localStorage.getItem(studentSubKey);
-        if (subRaw) {
-          const parsed = JSON.parse(subRaw);
-          if (parsed.answers && Object.keys(parsed.answers).length > 0) {
-            answers = parsed.answers;
-            status = 'Submitted';
-            submittedAt = parsed.submittedAt;
-            updatedAt = parsed.submittedAt;
-          }
-        } else {
-          const studentDraftKey = getDraftStorageKey(acc.id);
-          const draftRaw = localStorage.getItem(studentDraftKey);
-          if (draftRaw) {
-            const parsed = JSON.parse(draftRaw);
-            if (parsed.answers && Object.keys(parsed.answers).length > 0) {
-              answers = parsed.answers;
-              status = 'In Progress';
-              updatedAt = parsed.updatedAt;
-            }
-          }
-        }
-      } catch {}
-    }
-
-    if (Object.keys(answers).length === 0) {
-      answers = {};
-      status = 'Not Started';
-    }
-
-    // Always ensure Part 1 questions Q1-Q4 reflect the student's profile info if answers exist
-    if (Object.keys(answers).length > 0) {
-      if (acc.fullName) answers[1] = acc.fullName;
-      if (acc.age) answers[2] = acc.age;
-      if (acc.classGrade) answers[3] = normalizeClassGrade(acc.classGrade);
-      if (acc.schoolName) answers[4] = acc.schoolName;
-    }
-
-    // Count answered questions
-    const answeredCount = Object.keys(answers).filter((k) => {
-      const val = answers[Number(k)];
-      if (val === undefined || val === null) return false;
-      if (typeof val === 'string') return val.trim().length > 0;
-      if (Array.isArray(val)) return val.length > 0;
-      return false;
-    }).length;
-
-    // Recalibrate status based on answers if not already submitted
-    if (status !== 'Submitted') {
-      if (answeredCount >= QUESTIONS.length) {
-        status = 'Submitted';
-      } else if (answeredCount > 0) {
-        status = 'In Progress';
-      } else {
-        status = 'Not Started';
       }
+    } catch {}
+
+    // Fall back to student's informational completedReflections flag if known
+    if (status === 'Not Started' && (acc.completedReflections ?? 0) > 0) {
+      status = 'Submitted';
     }
 
     return {
@@ -223,24 +143,121 @@ export async function fetchAllStudentsWithStatus(): Promise<AdminStudentRecord[]
       email: acc.email || '',
       phone: acc.phone,
       status,
-      answeredCount,
+      answeredCount: status === 'Submitted' ? QUESTIONS.length : 0,
       totalQuestions: QUESTIONS.length,
+      createdAt: acc.createdAt,
       submittedAt,
       updatedAt,
-      answers,
+      answers: {}, // Loaded on-demand when opening individual student
     };
   });
 
-  // Sort alphabetically A-Z by full name
+  // Sort alphabetically A-Z by full name by default
   return records.sort((a, b) => a.fullName.localeCompare(b.fullName, undefined, { sensitivity: 'base' }));
+}
+
+/**
+ * Resolves questionnaire submission status for a batch of student IDs from Firestore.
+ * Preserves 'Unable to Load' on failure without silently converting to 'Not Started'.
+ */
+export async function resolveStudentBatchStatus(studentIds: string[]): Promise<
+  Record<string, { status: QuestionnaireStatus; submittedAt?: string; updatedAt?: string; error?: string }>
+> {
+  const result: Record<string, { status: QuestionnaireStatus; submittedAt?: string; updatedAt?: string; error?: string }> = {};
+
+  await Promise.all(
+    studentIds.map(async (id) => {
+      try {
+        const res = await getStudentSubmissionStatus(id);
+        result[id] = res;
+      } catch (err: unknown) {
+        result[id] = {
+          status: 'Unable to Load',
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    })
+  );
+
+  return result;
+}
+
+/**
+ * Fetches complete questionnaire answers on-demand for an individual student.
+ * Guarantees all 64 questions are retrieved with original types without truncation.
+ */
+export async function fetchStudentAnswersForAdmin(studentId: string): Promise<{
+  status: QuestionnaireStatus;
+  answers: Record<number, string | string[]>;
+  answeredCount: number;
+  submittedAt?: string;
+  updatedAt?: string;
+  version?: number;
+}> {
+  try {
+    const cloudRes = await getStudentFullQuestionnaireResponses(studentId);
+    if (cloudRes.status !== 'Not Started' && Object.keys(cloudRes.answers).length > 0) {
+      return cloudRes;
+    }
+  } catch (err) {
+    console.warn(`[StudentAdminService] Could not fetch answers from cloud for ${studentId}:`, err);
+  }
+
+  // Fallback to local storage if offline or during simulation
+  let answers: Record<number, string | string[]> = {};
+  let status: QuestionnaireStatus = 'Not Started';
+  let submittedAt: string | undefined;
+  let updatedAt: string | undefined;
+
+  try {
+    const subKey = getSubmissionStorageKey(studentId);
+    const subRaw = localStorage.getItem(subKey) || localStorage.getItem(`${STORAGE_PREFIX_SUBMISSION}${studentId}`);
+    if (subRaw) {
+      const parsed = JSON.parse(subRaw);
+      if (parsed.answers && Object.keys(parsed.answers).length > 0) {
+        answers = parsed.answers;
+        status = 'Submitted';
+        submittedAt = parsed.submittedAt;
+        updatedAt = parsed.submittedAt;
+      }
+    } else {
+      const draftKey = getDraftStorageKey(studentId);
+      const draftRaw = localStorage.getItem(draftKey) || localStorage.getItem(`${STORAGE_PREFIX_DRAFT}${studentId}`);
+      if (draftRaw) {
+        const parsed = JSON.parse(draftRaw);
+        if (parsed.answers && Object.keys(parsed.answers).length > 0) {
+          answers = parsed.answers;
+          status = 'In Progress';
+          updatedAt = parsed.updatedAt;
+        }
+      }
+    }
+  } catch {}
+
+  const answeredCount = Object.keys(answers).filter((k) => {
+    const val = answers[Number(k)];
+    if (val === undefined || val === null) return false;
+    if (typeof val === 'string') return val.trim().length > 0;
+    if (Array.isArray(val)) return val.length > 0;
+    return false;
+  }).length;
+
+  return {
+    status,
+    answers,
+    answeredCount,
+    submittedAt,
+    updatedAt,
+  };
 }
 
 /**
  * Updates a student's profile details by the administrator.
  * Critical Rules:
- * - Updates in place without modifying or deleting questionnaire answers (Q5–Q64).
- * - Synchronizes personal info Q1–Q4 in answers if answers exist.
- * - Does not create a duplicate student.
+ * - Validates inputs (name <= 128, school <= 200, age 8..25, class).
+ * - Persists directly to Firestore students/{studentId}.
+ * - Only updates local cache after confirmed server write.
+ * - Does not modify questionnaire responses (Q5–Q64).
  */
 export async function updateStudentProfileByAdmin(
   studentId: string,
@@ -259,44 +276,58 @@ export async function updateStudentProfileByAdmin(
   if (!cleanName) {
     return { success: false, error: 'Student Name is required.' };
   }
+  if (cleanName.length > 128) {
+    return { success: false, error: 'Student Name must not exceed 128 characters.' };
+  }
   if (!cleanSchool) {
     return { success: false, error: 'Institution / School is required.' };
   }
-
-  const accounts = getStoredRegisteredAccounts();
-  const existingIdx = accounts.findIndex((a) => a.id === studentId);
-  if (existingIdx === -1) {
-    return { success: false, error: 'Student record could not be found.' };
+  if (cleanSchool.length > 200) {
+    return { success: false, error: 'Institution / School must not exceed 200 characters.' };
+  }
+  const ageNum = parseInt(cleanAge, 10);
+  if (isNaN(ageNum) || ageNum < 8 || ageNum > 25) {
+    return { success: false, error: 'Please enter a valid age between 8 and 25 years.' };
   }
 
-  const existingAccount = accounts[existingIdx];
-  const updatedAccount: LocalStudentAccount = {
-    ...existingAccount,
+  // 1. Persist directly to Firestore backend and await positive confirmation
+  const outcome = await adminUpdateStudentProfileOutcome(studentId, {
     fullName: cleanName,
     age: cleanAge,
     classGrade: cleanClass,
     schoolName: cleanSchool,
-    badge: cleanClass === 'Others' ? 'Student' : `Class ${cleanClass} Student`,
-    lastLoginAt: existingAccount.lastLoginAt || new Date().toISOString(),
-  };
-
-  accounts[existingIdx] = updatedAccount;
-  saveRegisteredAccounts(accounts);
-
-  // Sync to Firestore backend asynchronously
-  updateStudentProfileInBackend(studentId, {
-    fullName: cleanName,
-    age: cleanAge,
-    classGrade: cleanClass,
-    schoolName: cleanSchool,
-  }).catch((err) => {
-    console.warn('Async cloud student profile update warning:', err);
   });
 
-  // If the active student session matches this ID, sync it too
-  const current = getCurrentStudent();
-  if (current && current.id === studentId) {
-    setStoredStudent(updatedAccount);
+  if (!outcome.success) {
+    const errRes = outcome as { success: false; code: string; message: string };
+    return {
+      success: false,
+      error: `Firestore update failed (${errRes.code}): ${errRes.message}`,
+    };
+  }
+
+  // 2. Only after successful server write, update local cache
+  const accounts = getStoredRegisteredAccounts();
+  const existingIdx = accounts.findIndex((a) => a.id === studentId);
+  if (existingIdx !== -1) {
+    const existingAccount = accounts[existingIdx];
+    const updatedAccount: LocalStudentAccount = {
+      ...existingAccount,
+      fullName: cleanName,
+      age: cleanAge,
+      classGrade: cleanClass,
+      schoolName: cleanSchool,
+      badge: cleanClass === 'Others' ? 'Student' : cleanClass === 'Higher' ? 'Higher Education' : `Class ${cleanClass} Student`,
+      lastLoginAt: existingAccount.lastLoginAt || new Date().toISOString(),
+    };
+    accounts[existingIdx] = updatedAccount;
+    saveRegisteredAccounts(accounts);
+
+    // If active student session matches this ID, sync it too
+    const current = getCurrentStudent();
+    if (current && current.id === studentId) {
+      setStoredStudent(updatedAccount);
+    }
   }
 
   // Sync personal info fields Q1–Q4 in student's stored answers if any exist

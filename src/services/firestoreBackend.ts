@@ -279,6 +279,187 @@ export async function updateStudentProfileOutcome(
   }
 }
 
+/**
+ * Updates permitted student profile fields (fullName, age, classGrade, schoolName) by the administrator.
+ * Validates against admin rules and writes directly to Firestore students/{studentId}.
+ */
+export async function adminUpdateStudentProfileOutcome(
+  studentId: string,
+  updates: {
+    fullName: string;
+    age: string;
+    classGrade: string;
+    schoolName: string;
+  }
+): Promise<ProfileSaveOutcome> {
+  if (!studentId) {
+    return { success: false, code: 'invalid-id', message: 'Invalid student ID.' };
+  }
+
+  const cleanName = updates.fullName.trim();
+  const cleanAge = updates.age.trim();
+  const cleanClass = updates.classGrade.trim();
+  const cleanSchool = updates.schoolName.trim();
+
+  if (!cleanName || cleanName.length > 128) {
+    return { success: false, code: 'invalid-name', message: 'Full name is required (max 128 characters).' };
+  }
+  if (!cleanSchool || cleanSchool.length > 200) {
+    return { success: false, code: 'invalid-school', message: 'Institution / School is required (max 200 characters).' };
+  }
+  const ageNum = parseInt(cleanAge, 10);
+  if (isNaN(ageNum) || ageNum < 8 || ageNum > 25) {
+    return { success: false, code: 'invalid-age', message: 'Age must be between 8 and 25 years.' };
+  }
+
+  try {
+    const studentRef = doc(db, COLLECTION_STUDENTS, studentId);
+    const updatedAt = new Date().toISOString();
+    const updatePayload = {
+      fullName: cleanName,
+      age: cleanAge,
+      classGrade: cleanClass,
+      schoolName: cleanSchool,
+      badge: cleanClass === 'Others' ? 'Student' : cleanClass === 'Higher' ? 'Higher Education' : `Class ${cleanClass} Student`,
+      updatedAt,
+    };
+
+    await updateDoc(studentRef, updatePayload);
+    return {
+      success: true,
+      profile: {
+        id: studentId,
+        ...updatePayload,
+      } as unknown as LocalStudentAccount,
+    };
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code || 'unknown-error';
+    const message = (err as { message?: string })?.message || String(err);
+    console.error(`[Firestore Backend] Admin profile update failed for ${studentId} (${code}):`, message);
+    return { success: false, code, message };
+  }
+}
+
+export type BackendSubmissionStatus = 'Submitted' | 'In Progress' | 'Not Started' | 'Unable to Load';
+
+/**
+ * Checks the questionnaire submission status for a student without loading all answers.
+ * When a Firestore permission, network, or document read error occurs, returns 'Unable to Load'
+ * rather than silently defaulting to 'Not Started'.
+ */
+export async function getStudentSubmissionStatus(studentId: string): Promise<{
+  status: BackendSubmissionStatus;
+  submittedAt?: string;
+  updatedAt?: string;
+  error?: string;
+}> {
+  if (!studentId) {
+    return { status: 'Not Started' };
+  }
+
+  try {
+    const subRef = doc(db, COLLECTION_SUBMISSIONS, studentId);
+    const subSnap = await getDoc(subRef);
+    if (subSnap.exists()) {
+      const data = subSnap.data();
+      return {
+        status: 'Submitted',
+        submittedAt: data.submittedAt || data.updatedAt,
+        updatedAt: data.updatedAt,
+      };
+    }
+
+    const draftRef = doc(db, COLLECTION_DRAFTS, studentId);
+    const draftSnap = await getDoc(draftRef);
+    if (draftSnap.exists()) {
+      const data = draftSnap.data();
+      return {
+        status: 'In Progress',
+        updatedAt: data.updatedAt,
+      };
+    }
+
+    return { status: 'Not Started' };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[Firestore Backend] Status check failed for ${studentId}:`, message);
+    return {
+      status: 'Unable to Load',
+      error: message,
+    };
+  }
+}
+
+/**
+ * Fetches the complete questionnaire answers and submission details on-demand for an individual student.
+ */
+export async function getStudentFullQuestionnaireResponses(studentId: string): Promise<{
+  status: 'Submitted' | 'In Progress' | 'Not Started';
+  answers: StudentAnswers;
+  answeredCount: number;
+  submittedAt?: string;
+  updatedAt?: string;
+  version?: number;
+}> {
+  if (!studentId) {
+    return { status: 'Not Started', answers: {}, answeredCount: 0 };
+  }
+
+  try {
+    // 1. Check submissions collection first
+    const subRef = doc(db, COLLECTION_SUBMISSIONS, studentId);
+    const subSnap = await getDoc(subRef);
+    if (subSnap.exists()) {
+      const data = subSnap.data();
+      const answers = deserializeAnswers(data.answers || {});
+      const answeredCount = Object.keys(answers).filter((k) => {
+        const val = answers[Number(k)];
+        if (val === undefined || val === null) return false;
+        if (typeof val === 'string') return val.trim().length > 0;
+        if (Array.isArray(val)) return val.length > 0;
+        return false;
+      }).length;
+
+      return {
+        status: 'Submitted',
+        answers,
+        answeredCount,
+        submittedAt: data.submittedAt || data.updatedAt,
+        updatedAt: data.updatedAt,
+        version: data.version,
+      };
+    }
+
+    // 2. Check drafts collection if not submitted
+    const draftRef = doc(db, COLLECTION_DRAFTS, studentId);
+    const draftSnap = await getDoc(draftRef);
+    if (draftSnap.exists()) {
+      const data = draftSnap.data();
+      const answers = deserializeAnswers(data.answers || {});
+      const answeredCount = Object.keys(answers).filter((k) => {
+        const val = answers[Number(k)];
+        if (val === undefined || val === null) return false;
+        if (typeof val === 'string') return val.trim().length > 0;
+        if (Array.isArray(val)) return val.length > 0;
+        return false;
+      }).length;
+
+      return {
+        status: 'In Progress',
+        answers,
+        answeredCount,
+        updatedAt: data.updatedAt,
+        version: data.version,
+      };
+    }
+
+    return { status: 'Not Started', answers: {}, answeredCount: 0 };
+  } catch (err) {
+    console.error(`[Firestore Backend] Failed to load responses for ${studentId}:`, err);
+    throw err;
+  }
+}
+
 /* =========================================================================
    2. QUESTIONNAIRE ANSWERS & DRAFTS BACKEND
    ========================================================================= */

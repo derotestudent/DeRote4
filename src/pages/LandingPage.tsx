@@ -79,7 +79,7 @@ export const PROBLEM_CARDS: ProblemCardData[] = [
   {
     id: 'lost-motivation',
     heading: 'Lost motivation',
-    tagline: "I'm studying because I have to, not because I know what I'm working towards.",
+    tagline: "I study because I have to, not knowing what's next.",
     intro: 'You haven’t necessarily stopped caring. You might just be tired of how things are going.',
     situations: [
       'Maybe studying has become a repeated cycle of school, coaching, homework, tests and marks. You keep working, but you rarely get the chance to explore something simply because it interests you.',
@@ -156,7 +156,7 @@ export const PROBLEM_CARDS: ProblemCardData[] = [
   {
     id: 'financial-pressure',
     heading: 'Financial pressure',
-    tagline: "Sometimes, your choices are influenced by what’s happening at home.",
+    tagline: "Choices can be shaped by what’s happening at home.",
     intro: 'Sometimes, your choices are influenced by what’s happening at home.',
     situations: [
       'Maybe you want to join a coaching institute, buy books, learn a skill or explore an interest, but the expenses make it difficult. You might avoid asking your parents for something because you already know money is tight.',
@@ -176,7 +176,7 @@ export const PROBLEM_CARDS: ProblemCardData[] = [
   {
     id: 'struggling-to-focus',
     heading: 'Struggling to focus',
-    tagline: "You sit down to study, but somehow your mind is somewhere else.",
+    tagline: "Sitting down to study, but thoughts wander elsewhere.",
     intro: 'You sit down to study, but somehow your mind is somewhere else.',
     situations: [
       'You open your book and read the same paragraph three times. You check your phone for a minute and suddenly half an hour has passed. Sometimes even without your phone, your thoughts wander.',
@@ -195,7 +195,7 @@ export const PROBLEM_CARDS: ProblemCardData[] = [
   {
     id: 'fear-of-disappointing-others',
     heading: 'Fear of disappointing others',
-    tagline: "Sometimes, making a mistake feels bigger than the mistake itself.",
+    tagline: "Sometimes making mistakes feels bigger than it really is.",
     intro: 'Sometimes, making a mistake feels bigger than the mistake itself.',
     situations: [
       'Maybe you avoid trying something because you’re afraid of failing. Perhaps you don’t ask questions in class because you worry people might laugh. You might hide a poor result, hesitate to share an idea or feel nervous about telling your parents that something isn’t going well.',
@@ -214,7 +214,7 @@ export const PROBLEM_CARDS: ProblemCardData[] = [
   {
     id: 'too-many-choices',
     heading: 'Too many choices, no direction',
-    tagline: "There are so many possibilities that choosing one feels impossible.",
+    tagline: "So many possibilities that choosing feels impossible.",
     intro: 'There are so many possibilities that choosing one feels impossible.',
     situations: [
       'You hear about different streams, colleges, entrance examinations, courses, careers and skills. One person tells you to follow your passion, another says to choose something secure, and someone else suggests doing what everyone else is doing.',

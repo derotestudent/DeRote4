@@ -136,6 +136,9 @@ export const PrintableReport: React.FC<PrintableReportProps> = (props) => {
                       {st.status === 'Not Started' && (
                         <span className="text-gray-600 font-medium">NOT STARTED</span>
                       )}
+                      {st.status === 'Unable to Load' && (
+                        <span className="text-red-700 font-medium">UNABLE TO LOAD</span>
+                      )}
                     </td>
                   </tr>
                 ))}

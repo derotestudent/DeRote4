@@ -22,10 +22,14 @@ import {
   UploadCloud,
   RefreshCw,
   Cloud,
+  Mail,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import {
   seedQuestionnaireToBackend,
   testFirestoreConnection,
+  getStudentSubmissionStatus,
 } from '../services/firestoreBackend';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
 import { SECTIONS, QUESTIONS, Question } from '../data/questionnaire';
@@ -33,6 +37,8 @@ import {
   AdminStudentRecord,
   QuestionnaireStatus,
   fetchAllStudentsWithStatus,
+  fetchStudentAnswersForAdmin,
+  resolveStudentBatchStatus,
   updateStudentProfileByAdmin,
   formatClassDisplay,
   normalizeClassGrade,
@@ -52,12 +58,40 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
   const [admin, setAdmin] = useState<AdminAccount | null>(() => getCurrentAdmin());
   const [students, setStudents] = useState<AdminStudentRecord[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
-  // Filters state
+  // Filters & Search state
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [classFilter, setClassFilter] = useState<'all' | '8' | '9' | '10' | '11' | '12' | 'Others'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'Submitted' | 'In Progress' | 'Not Started'>('all');
+  const [classFilter, setClassFilter] = useState<'all' | '8' | '9' | '10' | '11' | '12' | 'Higher' | 'Others'>('all');
+  const [institutionFilter, setInstitutionFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'Submitted' | 'In Progress' | 'Not Started' | 'Unable to Load'>('all');
+  const [sortBy, setSortBy] = useState<'name_asc' | 'name_desc' | 'date_desc' | 'date_asc'>('name_asc');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(15);
+
+  // Status cache for visible batch: strictly holds successful statuses ('Submitted', 'In Progress', 'Not Started')
+  const [statusCache, setStatusCache] = useState<
+    Record<string, { status: QuestionnaireStatus; submittedAt?: string; updatedAt?: string }>
+  >({});
+
+  // Status lookup errors map: tracks failed status lookups ('Unable to Load') separately without caching as success
+  const [statusErrors, setStatusErrors] = useState<Record<string, string>>({});
+  const [retryingStatusIds, setRetryingStatusIds] = useState<Set<string>>(new Set());
+
+  // Individual student on-demand answer loading state
+  const [isLoadingAnswers, setIsLoadingAnswers] = useState<boolean>(false);
+  const [answersError, setAnswersError] = useState<string | null>(null);
+  const [loadedAnswersData, setLoadedAnswersData] = useState<{
+    status: QuestionnaireStatus;
+    answers: Record<number, string | string[]>;
+    answeredCount: number;
+    submittedAt?: string;
+    updatedAt?: string;
+    version?: number;
+  } | null>(null);
 
   // Edit modal state
   const [showEditModal, setShowEditModal] = useState<boolean>(false);
@@ -153,10 +187,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
   // Load student records
   const loadData = async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const records = await fetchAllStudentsWithStatus();
       setStudents(records);
-    } catch (err) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to retrieve records from Firestore.';
+      setLoadError(msg);
       console.error('Failed to load student records:', err);
     } finally {
       setIsLoading(false);
@@ -169,18 +206,31 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
 
   // Top metric counts from all available student records
   const totalRegistered = students.length;
-  const totalSubmitted = students.filter((s) => s.status === 'Submitted').length;
-  const totalInProgress = students.filter((s) => s.status === 'In Progress').length;
-  const totalNotStarted = students.filter((s) => s.status === 'Not Started').length;
+  const totalSubmitted = students.filter((s) => (statusErrors[s.id] ? false : (statusCache[s.id]?.status || s.status) === 'Submitted')).length;
+  const totalInProgress = students.filter((s) => (statusErrors[s.id] ? false : (statusCache[s.id]?.status || s.status) === 'In Progress')).length;
+  const totalNotStarted = students.filter((s) => (statusErrors[s.id] ? false : (statusCache[s.id]?.status || s.status) === 'Not Started')).length;
+  const totalUnableToLoad = Object.keys(statusErrors).length;
 
-  // Filtered and alphabetically sorted students list
+  // Unique institutions list for the institution filter
+  const uniqueInstitutions = useMemo(() => {
+    return Array.from(new Set(students.map((s) => s.schoolName).filter(Boolean))).sort();
+  }, [students]);
+
+  // Filtered and sorted students list
   const filteredStudents = useMemo(() => {
     return students
       .filter((student) => {
-        // Name search filter
+        // Multi-field search filter: name, email, institution, or class
         if (searchQuery.trim()) {
           const q = searchQuery.trim().toLowerCase();
-          if (!student.fullName.toLowerCase().includes(q)) {
+          const nameMatch = student.fullName.toLowerCase().includes(q);
+          const emailMatch = (student.email || '').toLowerCase().includes(q);
+          const schoolMatch = (student.schoolName || '').toLowerCase().includes(q);
+          const classMatch =
+            student.classGrade.toLowerCase().includes(q) ||
+            formatClassDisplay(student.classGrade).toLowerCase().includes(q);
+
+          if (!nameMatch && !emailMatch && !schoolMatch && !classMatch) {
             return false;
           }
         }
@@ -192,23 +242,206 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
           }
         }
 
+        // Institution filter
+        if (institutionFilter !== 'all') {
+          if (student.schoolName !== institutionFilter) {
+            return false;
+          }
+        }
+
         // Status filter
         if (statusFilter !== 'all') {
-          if (student.status !== statusFilter) {
+          const currentStatus = statusErrors[student.id]
+            ? 'Unable to Load'
+            : statusCache[student.id]?.status || student.status;
+          if (currentStatus !== statusFilter) {
             return false;
           }
         }
 
         return true;
       })
-      .sort((a, b) => a.fullName.localeCompare(b.fullName, undefined, { sensitivity: 'base' }));
-  }, [students, searchQuery, classFilter, statusFilter]);
+      .sort((a, b) => {
+        if (sortBy === 'name_asc') {
+          return a.fullName.localeCompare(b.fullName, undefined, { sensitivity: 'base' });
+        }
+        if (sortBy === 'name_desc') {
+          return b.fullName.localeCompare(a.fullName, undefined, { sensitivity: 'base' });
+        }
+        if (sortBy === 'date_desc') {
+          return (b.createdAt || '').localeCompare(a.createdAt || '');
+        }
+        if (sortBy === 'date_asc') {
+          return (a.createdAt || '').localeCompare(b.createdAt || '');
+        }
+        return 0;
+      });
+  }, [students, searchQuery, classFilter, institutionFilter, statusFilter, sortBy, statusCache, statusErrors]);
 
-  // Selected student record
+  // Reset to page 1 whenever any filter, search, or sort changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, classFilter, institutionFilter, statusFilter, sortBy]);
+
+  // Paginated students slice for current page
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
+
+  // Resolve status for visible batch of students if not already cached
+  useEffect(() => {
+    if (paginatedStudents.length === 0) return;
+    const unresolvedIds = paginatedStudents
+      .map((s) => s.id)
+      .filter((id) => !statusCache[id] && !statusErrors[id]);
+
+    if (unresolvedIds.length === 0) return;
+
+    let isCancelled = false;
+    resolveStudentBatchStatus(unresolvedIds).then((batch) => {
+      if (!isCancelled) {
+        // Cache successful statuses ONLY; do not cache failed lookups as successful results
+        setStatusCache((prev) => {
+          const next = { ...prev };
+          for (const [id, res] of Object.entries(batch)) {
+            if (res.status === 'Submitted' || res.status === 'In Progress' || res.status === 'Not Started') {
+              next[id] = res;
+            }
+          }
+          return next;
+        });
+
+        // Track failed status lookups ('Unable to Load') separately
+        setStatusErrors((prev) => {
+          const next = { ...prev };
+          for (const [id, res] of Object.entries(batch)) {
+            if (res.status === 'Unable to Load') {
+              next[id] = res.error || 'Failed to check status';
+            } else {
+              delete next[id];
+            }
+          }
+          return next;
+        });
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [paginatedStudents, statusCache, statusErrors]);
+
+  // Handler to retry fetching an individual student's status
+  const handleRetryStudentStatus = async (studentId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setRetryingStatusIds((prev) => new Set(prev).add(studentId));
+    setStatusErrors((prev) => {
+      const next = { ...prev };
+      delete next[studentId];
+      return next;
+    });
+
+    try {
+      const res = await getStudentSubmissionStatus(studentId);
+      if (res.status === 'Unable to Load') {
+        setStatusErrors((prev) => ({
+          ...prev,
+          [studentId]: res.error || 'Failed to check status',
+        }));
+      } else {
+        setStatusCache((prev) => ({
+          ...prev,
+          [studentId]: res,
+        }));
+      }
+    } catch (err: unknown) {
+      setStatusErrors((prev) => ({
+        ...prev,
+        [studentId]: err instanceof Error ? err.message : String(err),
+      }));
+    } finally {
+      setRetryingStatusIds((prev) => {
+        const next = new Set(prev);
+        next.delete(studentId);
+        return next;
+      });
+    }
+  };
+
+  // Selected student record (merged with loaded answers and live status)
   const selectedStudent = useMemo(() => {
     if (!selectedStudentId) return null;
-    return students.find((s) => s.id === selectedStudentId) || null;
-  }, [students, selectedStudentId]);
+    const base = students.find((s) => s.id === selectedStudentId);
+    if (!base) return null;
+
+    const cached = statusCache[selectedStudentId];
+    const isStatusError = Boolean(statusErrors[selectedStudentId]);
+    const computedStatus: QuestionnaireStatus = isStatusError
+      ? 'Unable to Load'
+      : (loadedAnswersData?.status || cached?.status || base.status);
+
+    return {
+      ...base,
+      status: computedStatus,
+      submittedAt: loadedAnswersData?.submittedAt || cached?.submittedAt || base.submittedAt,
+      updatedAt: loadedAnswersData?.updatedAt || cached?.updatedAt || base.updatedAt,
+      answers: loadedAnswersData?.answers || base.answers,
+      answeredCount: loadedAnswersData?.answeredCount ?? base.answeredCount,
+    };
+  }, [students, selectedStudentId, loadedAnswersData, statusCache, statusErrors]);
+
+  // On-demand questionnaire responses loader when an individual student is selected
+  useEffect(() => {
+    if (!selectedStudentId) {
+      setLoadedAnswersData(null);
+      setAnswersError(null);
+      return;
+    }
+
+    let isCancelled = false;
+    const loadAnswers = async () => {
+      setIsLoadingAnswers(true);
+      setAnswersError(null);
+      try {
+        const res = await fetchStudentAnswersForAdmin(selectedStudentId);
+        if (!isCancelled) {
+          setLoadedAnswersData(res);
+          if (res.status !== 'Unable to Load') {
+            setStatusCache((prev) => ({
+              ...prev,
+              [selectedStudentId]: {
+                status: res.status,
+                submittedAt: res.submittedAt,
+                updatedAt: res.updatedAt,
+              },
+            }));
+            setStatusErrors((prev) => {
+              const next = { ...prev };
+              delete next[selectedStudentId];
+              return next;
+            });
+          }
+        }
+      } catch (err: unknown) {
+        if (!isCancelled) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setAnswersError(`Failed to load questionnaire responses: ${msg}`);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingAnswers(false);
+        }
+      }
+    };
+
+    loadAnswers();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedStudentId]);
 
   // Previous / Next navigation index inside the current filtered list
   const currentFilteredIndex = useMemo(() => {
@@ -236,7 +469,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
   const handleResetFilters = () => {
     setSearchQuery('');
     setClassFilter('all');
+    setInstitutionFilter('all');
     setStatusFilter('all');
+    setSortBy('name_asc');
+    setCurrentPage(1);
   };
 
   const handleSignOut = async () => {
@@ -474,6 +710,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                           <span>Not Started</span>
                         </span>
                       )}
+                      {selectedStudent.status === 'Unable to Load' && (
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-red-50 text-red-700 border border-red-200 text-xs font-bold">
+                          <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                          <span>Unable to Load</span>
+                        </span>
+                      )}
                     </div>
 
                     <p className="text-xs sm:text-sm text-[#5A6E85]">
@@ -495,15 +737,25 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                   </button>
                 </div>
 
-                {/* Profile Fields Grid - Mobile Responsive 2-column layout */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 pt-6">
-                  <div className="col-span-2 sm:col-span-1 lg:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
+                {/* Profile Fields Grid - 8 fields as required by Phase 6 */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pt-6">
+                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
                       <User className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Student Name</span>
+                      <span>Full Name</span>
                     </div>
                     <div className="text-sm font-bold text-[#062B50] break-words">
                       {selectedStudent.fullName}
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
+                      <Mail className="w-3.5 h-3.5 text-[#0866C6]" />
+                      <span>Email</span>
+                    </div>
+                    <div className="text-sm font-bold text-[#062B50] break-words truncate" title={selectedStudent.email}>
+                      {selectedStudent.email || '—'}
                     </div>
                   </div>
 
@@ -527,13 +779,49 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     </div>
                   </div>
 
-                  <div className="col-span-2 sm:col-span-1 lg:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
+                  <div className="col-span-2 p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
                       <School className="w-3.5 h-3.5 text-[#0866C6]" />
                       <span>Institution / School</span>
                     </div>
                     <div className="text-sm font-bold text-[#062B50] break-words" title={selectedStudent.schoolName}>
                       {selectedStudent.schoolName}
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
+                      <Calendar className="w-3.5 h-3.5 text-[#0866C6]" />
+                      <span>Registration Date</span>
+                    </div>
+                    <div className="text-sm font-bold text-[#062B50]">
+                      {selectedStudent.createdAt
+                        ? new Date(selectedStudent.createdAt).toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                        : '—'}
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#0866C6]" />
+                      <span>Submission Date</span>
+                    </div>
+                    <div className="text-sm font-bold text-[#062B50]">
+                      {selectedStudent.submittedAt
+                        ? new Date(selectedStudent.submittedAt).toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })
+                        : selectedStudent.status === 'Submitted'
+                        ? 'Submitted'
+                        : selectedStudent.status === 'Unable to Load'
+                        ? 'Lookup Failed'
+                        : 'Not submitted yet'}
                     </div>
                   </div>
                 </div>
@@ -566,6 +854,32 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     </div>
                   </div>
                 )}
+
+                {selectedStudent.status === 'Unable to Load' && (
+                  <div className="mt-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-red-800">
+                          Status Lookup Error
+                        </h4>
+                        <p className="text-xs sm:text-sm text-red-700 mt-0.5">
+                          {statusErrors[selectedStudent.id]
+                            ? `Could not verify questionnaire status: ${statusErrors[selectedStudent.id]}`
+                            : "Unable to retrieve this student's questionnaire status due to a Firestore or network error."}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => handleRetryStudentStatus(selectedStudent.id, e)}
+                      disabled={retryingStatusIds.has(selectedStudent.id)}
+                      className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-xs cursor-pointer self-start sm:self-auto disabled:opacity-50"
+                    >
+                      {retryingStatusIds.has(selectedStudent.id) ? 'Retrying...' : 'Retry Status Check'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Student Answers Display Section */}
@@ -586,7 +900,29 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                   </div>
                 </div>
 
-                {selectedStudent.status === 'Not Started' || selectedStudent.answeredCount === 0 ? (
+                {isLoadingAnswers ? (
+                  <div className="text-center py-16 text-[#64778C]">
+                    <RefreshCw className="w-8 h-8 mx-auto text-[#0866C6] animate-spin mb-3" />
+                    <p className="text-sm font-semibold text-[#062B50]">Loading student responses from Firestore...</p>
+                    <p className="text-xs text-[#64778C] mt-1">Retrieving answers for {selectedStudent.fullName}...</p>
+                  </div>
+                ) : answersError ? (
+                  <div className="p-6 rounded-2xl bg-red-50 border border-red-200 text-center space-y-3">
+                    <AlertCircle className="w-8 h-8 text-red-600 mx-auto" />
+                    <p className="text-sm font-semibold text-red-900">{answersError}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const sId = selectedStudentId;
+                        setSelectedStudentId(null);
+                        setTimeout(() => setSelectedStudentId(sId), 50);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition cursor-pointer"
+                    >
+                      Retry Loading Answers
+                    </button>
+                  </div>
+                ) : selectedStudent.status === 'Not Started' || selectedStudent.answeredCount === 0 ? (
                   <div className="text-center py-12 text-[#64778C]">
                     <AlertCircle className="w-10 h-10 mx-auto text-[#0866C6] opacity-40 mb-3" />
                     <p className="text-sm font-semibold text-[#062B50]">No Answers Saved Yet</p>
@@ -852,24 +1188,41 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                 </div>
               </div>
 
+              {/* Load Error Banner */}
+              {loadError && (
+                <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-900 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+                    <span>{loadError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadData}
+                    className="px-3.5 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
               {/* Search and Filters Bar */}
               <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E8F3FF] shadow-xs space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-center">
-                  {/* Search Bar */}
-                  <div className="md:col-span-5 relative">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 sm:gap-4 items-center">
+                  {/* Search Bar - Multi-field Search */}
+                  <div className="lg:col-span-4 relative">
                     <Search className="w-4 h-4 text-[#64778C] absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search student by name..."
+                      placeholder="Search by name, email, institution, or class..."
                       className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm text-[#062B50] placeholder-[#8A9BA8] focus:outline-none focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/10 transition-all bg-[#F8FAFD]"
                     />
                     {searchQuery && (
                       <button
                         type="button"
                         onClick={() => setSearchQuery('')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8A9BA8] hover:text-[#062B50] p-1"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8A9BA8] hover:text-[#062B50] p-1 cursor-pointer"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -877,15 +1230,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                   </div>
 
                   {/* Class Filter */}
-                  <div className="md:col-span-3">
+                  <div className="lg:col-span-2">
                     <select
                       value={classFilter}
                       onChange={(e) =>
                         setClassFilter(
-                          e.target.value as 'all' | '8' | '9' | '10' | '11' | '12' | 'Others'
+                          e.target.value as 'all' | '8' | '9' | '10' | '11' | '12' | 'Higher' | 'Others'
                         )
                       }
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/10 cursor-pointer"
+                      className="w-full px-3 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/10 cursor-pointer"
                     >
                       <option value="all">All Classes</option>
                       <option value="8">Class 8</option>
@@ -893,58 +1246,112 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                       <option value="10">Class 10</option>
                       <option value="11">Class 11</option>
                       <option value="12">Class 12</option>
+                      <option value="Higher">Higher / Other</option>
                       <option value="Others">Others</option>
                     </select>
                   </div>
 
+                  {/* Institution Filter */}
+                  <div className="lg:col-span-3">
+                    <select
+                      value={institutionFilter}
+                      onChange={(e) => setInstitutionFilter(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/10 cursor-pointer truncate"
+                      title="Filter by institution"
+                    >
+                      <option value="all">All Institutions ({uniqueInstitutions.length})</option>
+                      {uniqueInstitutions.map((inst) => (
+                        <option key={inst} value={inst}>
+                          {inst}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   {/* Status Filter */}
-                  <div className="md:col-span-3">
+                  <div className="lg:col-span-2">
                     <select
                       value={statusFilter}
                       onChange={(e) =>
                         setStatusFilter(
-                          e.target.value as 'all' | 'Submitted' | 'In Progress' | 'Not Started'
+                          e.target.value as 'all' | 'Submitted' | 'In Progress' | 'Not Started' | 'Unable to Load'
                         )
                       }
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/10 cursor-pointer"
+                      className="w-full px-3 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/10 cursor-pointer"
                     >
                       <option value="all">All Statuses</option>
                       <option value="Submitted">Submitted</option>
                       <option value="In Progress">In Progress</option>
                       <option value="Not Started">Not Started</option>
+                      <option value="Unable to Load">Unable to Load</option>
                     </select>
                   </div>
 
                   {/* Reset Filters Button */}
-                  <div className="md:col-span-1 flex justify-end">
+                  <div className="lg:col-span-1 flex justify-end">
                     <button
                       type="button"
                       onClick={handleResetFilters}
-                      className="w-full md:w-auto p-2.5 rounded-xl border border-[#D5E4F3] text-[#64778C] hover:text-[#062B50] hover:bg-[#F2F7FC] transition-colors cursor-pointer flex items-center justify-center"
-                      title="Reset all filters"
+                      className="w-full p-2.5 rounded-xl border border-[#D5E4F3] text-[#64778C] hover:text-[#062B50] hover:bg-[#F2F7FC] transition-colors cursor-pointer flex items-center justify-center"
+                      title="Reset all filters and search"
                     >
                       <RotateCcw className="w-4 h-4" />
-                      <span className="md:hidden ml-2 text-xs font-semibold">Reset Filters</span>
+                      <span className="lg:hidden ml-2 text-xs font-semibold">Reset</span>
                     </button>
                   </div>
                 </div>
 
-                {/* Filter info indicator */}
-                <div className="flex items-center justify-between text-xs text-[#64778C] pt-2 border-t border-[#E8F3FF]">
-                  <span>
-                    Showing <strong className="text-[#062B50]">{filteredStudents.length}</strong> of{' '}
-                    {students.length} students (Sorted Alphabetically A–Z)
-                  </span>
+                {/* Filter info indicator and Sort Control */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-[#64778C] pt-2 border-t border-[#E8F3FF]">
+                  <div className="flex items-center gap-3">
+                    <span>
+                      Showing{' '}
+                      <strong className="text-[#062B50]">
+                        {filteredStudents.length === 0
+                          ? 0
+                          : `${(currentPage - 1) * pageSize + 1}–${Math.min(
+                              currentPage * pageSize,
+                              filteredStudents.length
+                            )}`}
+                      </strong>{' '}
+                      of <strong className="text-[#062B50]">{filteredStudents.length}</strong> students
+                      {filteredStudents.length !== students.length && (
+                        <span> (filtered from {students.length} total)</span>
+                      )}
+                    </span>
 
-                  {(searchQuery || classFilter !== 'all' || statusFilter !== 'all') && (
-                    <button
-                      type="button"
-                      onClick={handleResetFilters}
-                      className="text-xs font-bold text-[#0866C6] hover:underline cursor-pointer"
+                    {(searchQuery ||
+                      classFilter !== 'all' ||
+                      institutionFilter !== 'all' ||
+                      statusFilter !== 'all') && (
+                      <button
+                        type="button"
+                        onClick={handleResetFilters}
+                        className="text-xs font-bold text-[#0866C6] hover:underline cursor-pointer"
+                      >
+                        Clear active filters
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Sort Controls */}
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-[#64778C]">Sort:</span>
+                    <select
+                      value={sortBy}
+                      onChange={(e) =>
+                        setSortBy(
+                          e.target.value as 'name_asc' | 'name_desc' | 'date_desc' | 'date_asc'
+                        )
+                      }
+                      className="px-2.5 py-1 rounded-lg border border-[#D5E4F3] text-xs font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] cursor-pointer"
                     >
-                      Clear active filters
-                    </button>
-                  )}
+                      <option value="name_asc">Name (A–Z)</option>
+                      <option value="name_desc">Name (Z–A)</option>
+                      <option value="date_desc">Registration (Newest)</option>
+                      <option value="date_asc">Registration (Oldest)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -955,7 +1362,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     <Search className="w-10 h-10 mx-auto text-[#0866C6] opacity-30 mb-3" />
                     <p className="text-base font-bold text-[#062B50]">No matching students found</p>
                     <p className="text-xs sm:text-sm text-[#64778C] mt-1 max-w-sm mx-auto">
-                      Try adjusting your search query, class selection, or status filter.
+                      Try adjusting your search query, class selection, institution, or status filter.
                     </p>
                     <button
                       type="button"
@@ -966,70 +1373,166 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     </button>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-[#E8F3FF] bg-[#F8FAFD] text-[11px] font-extrabold uppercase tracking-wider text-[#64778C]">
-                          <th className="py-3.5 px-6">Student Name</th>
-                          <th className="py-3.5 px-4">Class</th>
-                          <th className="py-3.5 px-4">Age</th>
-                          <th className="py-3.5 px-4">Institution / School</th>
-                          <th className="py-3.5 px-4">Status</th>
-                          <th className="py-3.5 px-6 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#E8F3FF] text-xs sm:text-sm">
-                        {filteredStudents.map((student) => (
-                          <tr
-                            key={student.id}
-                            onClick={() => {
-                              setSelectedStudentId(student.id);
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}
-                            className="hover:bg-[#F8FAFD] transition-colors cursor-pointer group"
-                          >
-                            <td className="py-4 px-6 font-bold text-[#062B50] group-hover:text-[#0866C6] transition-colors">
-                              {student.fullName}
-                            </td>
-                            <td className="py-4 px-4 font-semibold text-[#062B50]">
-                              {formatClassDisplay(student.classGrade)}
-                            </td>
-                            <td className="py-4 px-4 text-[#5A6E85]">
-                              {student.age ? `${student.age} yrs` : '—'}
-                            </td>
-                            <td className="py-4 px-4 text-[#5A6E85] max-w-xs truncate" title={student.schoolName}>
-                              {student.schoolName}
-                            </td>
-                            <td className="py-4 px-4">
-                              {student.status === 'Submitted' && (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                  <span>Submitted</span>
-                                </span>
-                              )}
-                              {student.status === 'In Progress' && (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-bold border border-amber-200">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                  <span>In Progress</span>
-                                </span>
-                              )}
-                              {student.status === 'Not Started' && (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                                  <span>Not Started</span>
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-4 px-6 text-right">
-                              <span className="text-xs font-bold text-[#0866C6] group-hover:underline">
-                                View Answers &amp; Profile →
-                              </span>
-                            </td>
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-[#E8F3FF] bg-[#F8FAFD] text-[11px] font-extrabold uppercase tracking-wider text-[#64778C]">
+                            <th className="py-3.5 px-6">Student Name</th>
+                            <th className="py-3.5 px-4">Class</th>
+                            <th className="py-3.5 px-4">Age</th>
+                            <th className="py-3.5 px-4">Institution / School</th>
+                            <th className="py-3.5 px-4">Status</th>
+                            <th className="py-3.5 px-6 text-right">Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-[#E8F3FF] text-xs sm:text-sm">
+                          {paginatedStudents.map((student) => {
+                            const isStatusError = Boolean(statusErrors[student.id]);
+                            const currentStatus = isStatusError
+                              ? 'Unable to Load'
+                              : statusCache[student.id]?.status || student.status;
+                            return (
+                              <tr
+                                key={student.id}
+                                onClick={() => {
+                                  setSelectedStudentId(student.id);
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                className="hover:bg-[#F8FAFD] transition-colors cursor-pointer group"
+                              >
+                                <td className="py-4 px-6 font-bold text-[#062B50] group-hover:text-[#0866C6] transition-colors">
+                                  <div>{student.fullName}</div>
+                                  {student.email && (
+                                    <div className="text-[11px] font-normal text-[#64778C]">
+                                      {student.email}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-4 px-4 font-semibold text-[#062B50]">
+                                  {formatClassDisplay(student.classGrade)}
+                                </td>
+                                <td className="py-4 px-4 text-[#5A6E85]">
+                                  {student.age ? `${student.age} yrs` : '—'}
+                                </td>
+                                <td className="py-4 px-4 text-[#5A6E85] max-w-xs truncate" title={student.schoolName}>
+                                  {student.schoolName}
+                                </td>
+                                <td className="py-4 px-4">
+                                  {currentStatus === 'Submitted' && (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                      <span>Submitted</span>
+                                    </span>
+                                  )}
+                                  {currentStatus === 'In Progress' && (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-bold border border-amber-200">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                      <span>In Progress</span>
+                                    </span>
+                                  )}
+                                  {currentStatus === 'Not Started' && (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                                      <span>Not Started</span>
+                                    </span>
+                                  )}
+                                  {currentStatus === 'Unable to Load' && (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-red-700 text-xs font-bold border border-red-200">
+                                      <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                                      <span>Unable to Load</span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleRetryStudentStatus(student.id, e)}
+                                        disabled={retryingStatusIds.has(student.id)}
+                                        className="ml-1 underline text-[11px] font-semibold text-red-800 hover:text-red-950 cursor-pointer disabled:opacity-50"
+                                        title={statusErrors[student.id] || 'Retry status check'}
+                                      >
+                                        {retryingStatusIds.has(student.id) ? '...' : 'Retry'}
+                                      </button>
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-4 px-6 text-right">
+                                  <span className="text-xs font-bold text-[#0866C6] group-hover:underline">
+                                    View Answers &amp; Profile →
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination Bar */}
+                    <div className="p-4 bg-[#F8FAFD] border-t border-[#E8F3FF] flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div className="flex items-center gap-2 text-xs text-[#64778C]">
+                        <span>Rows per page:</span>
+                        <select
+                          value={pageSize}
+                          onChange={(e) => {
+                            setPageSize(Number(e.target.value));
+                            setCurrentPage(1);
+                          }}
+                          className="px-2 py-1 rounded-lg border border-[#D5E4F3] bg-white text-xs font-bold text-[#062B50] focus:outline-none focus:border-[#0866C6] cursor-pointer"
+                        >
+                          <option value="10">10</option>
+                          <option value="15">15</option>
+                          <option value="25">25</option>
+                          <option value="50">50</option>
+                        </select>
+                        <span className="ml-2">
+                          Page <strong className="text-[#062B50]">{currentPage}</strong> of{' '}
+                          <strong className="text-[#062B50]">{totalPages}</strong>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentPage(1)}
+                          disabled={currentPage === 1}
+                          className="p-1.5 rounded-lg border border-[#D5E4F3] bg-white text-[#062B50] hover:bg-[#F2F7FC] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                          title="First Page"
+                        >
+                          <ChevronsLeft className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                          className="p-1.5 rounded-lg border border-[#D5E4F3] bg-white text-[#062B50] hover:bg-[#F2F7FC] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                          title="Previous Page"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+
+                        <span className="px-3 py-1 text-xs font-bold text-[#0866C6] bg-[#EBF4FE] rounded-lg">
+                          {currentPage}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                          disabled={currentPage >= totalPages}
+                          className="p-1.5 rounded-lg border border-[#D5E4F3] bg-white text-[#062B50] hover:bg-[#F2F7FC] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                          title="Next Page"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentPage(totalPages)}
+                          disabled={currentPage >= totalPages}
+                          className="p-1.5 rounded-lg border border-[#D5E4F3] bg-white text-[#062B50] hover:bg-[#F2F7FC] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                          title="Last Page"
+                        >
+                          <ChevronsRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -1108,6 +1611,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     <option value="10">Class 10</option>
                     <option value="11">Class 11</option>
                     <option value="12">Class 12</option>
+                    <option value="Higher">Higher / Other</option>
                     <option value="Others">Others</option>
                   </select>
                 </div>

@@ -121,6 +121,7 @@ service cloud.firestore {
         ])
         && incoming.id == existing.id
         && incoming.id == studentId
+        && incoming.email == existing.email
         && incoming.fullName is string && incoming.fullName.size() > 0 && incoming.fullName.size() <= 128
         && incoming.schoolName is string && incoming.schoolName.size() > 0 && incoming.schoolName.size() <= 200
         && isValidAge(incoming.age)

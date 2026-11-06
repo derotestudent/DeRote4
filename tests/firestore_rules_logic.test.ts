@@ -157,6 +157,7 @@ function evaluateStudentUpdate(
       hasOnly(incomingKeys, ALLOWED_STUDENT_CREATE_KEYS) &&
       incoming.id === existing.id &&
       incoming.id === studentId &&
+      incoming.email === existing.email &&
       typeof incoming.fullName === 'string' &&
       typeof incoming.schoolName === 'string' &&
       isValidAge(incoming.age) &&
@@ -533,7 +534,7 @@ test('27. Admin reads all student profiles and submissions: ALLOW', () => {
   assert.equal(evaluateStudentRead(auth, STUDENT_A_UID), 'ALLOW');
 });
 
-test('28. Admin edits student profile without arbitrary keys: ALLOW', () => {
+test('28. Admin edits student profile without arbitrary keys and with unchanged email: ALLOW', () => {
   const auth = { uid: DESIGNATED_ADMIN_UID };
   const existing = {
     id: STUDENT_A_UID,
@@ -541,6 +542,7 @@ test('28. Admin edits student profile without arbitrary keys: ALLOW', () => {
     schoolName: 'DPS',
     age: '15',
     classGrade: '10',
+    email: 'alice@school.edu',
   };
   const incoming = {
     ...existing,
@@ -549,4 +551,21 @@ test('28. Admin edits student profile without arbitrary keys: ALLOW', () => {
     classGrade: '11',
   };
   assert.equal(evaluateStudentUpdate(auth, STUDENT_A_UID, incoming, existing), 'ALLOW');
+});
+
+test('29. Admin attempting to modify student email: DENY (enforces email immutability)', () => {
+  const auth = { uid: DESIGNATED_ADMIN_UID };
+  const existing = {
+    id: STUDENT_A_UID,
+    fullName: 'Alice',
+    schoolName: 'DPS',
+    age: '15',
+    classGrade: '10',
+    email: 'alice@school.edu',
+  };
+  const incomingTamperedEmail = {
+    ...existing,
+    email: 'attacker_controlled@malicious.org',
+  };
+  assert.equal(evaluateStudentUpdate(auth, STUDENT_A_UID, incomingTamperedEmail, existing), 'DENY');
 });
