@@ -33,7 +33,7 @@ interface EditProfilePageProps {
   mode?: 'completion' | 'edit';
 }
 
-const CLASS_OPTIONS = ['8', '9', '10', '11', '12', 'Others'];
+const CLASS_OPTIONS = ['8', '9', '10', '11', '12', 'Higher'];
 
 export const EditProfilePage: React.FC<EditProfilePageProps> = ({
   onNavigate,
@@ -460,13 +460,13 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
                           : 'bg-white border-[#D5E4F3] text-[#062B50] hover:border-[#0866C6]/40 hover:bg-[#F2F7FC]'
                       }`}
                     >
-                      {c === 'Others' ? 'Others' : `Class ${c}`}
+                      {c === 'Higher' ? 'Higher' : `Class ${c}`}
                     </button>
                   );
                 })}
               </div>
               <p className="text-[11px] text-[#5A6E85] pl-1">
-                Select your current grade level (8th through 12th, or Others).
+                Select your current grade level (8th through 12th, or Higher).
               </p>
             </div>
 

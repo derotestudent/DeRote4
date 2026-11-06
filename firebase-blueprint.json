@@ -1,0 +1,184 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student Profile",
+      "description": "Student profile containing identification, educational level, and reflection status.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique student identifier matching Firebase Auth UID."
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Full legal or preferred name of the student.",
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "description": "Student email address.",
+          "maxLength": 128
+        },
+        "age": {
+          "type": "string",
+          "description": "Student age in years.",
+          "maxLength": 10
+        },
+        "classGrade": {
+          "type": "string",
+          "description": "Current school class or grade (8, 9, 10, 11, 12, Others).",
+          "maxLength": 32
+        },
+        "schoolName": {
+          "type": "string",
+          "description": "Enrolled school or educational institution.",
+          "maxLength": 200
+        },
+        "phone": {
+          "type": "string",
+          "description": "Optional contact telephone number.",
+          "maxLength": 32
+        },
+        "completedReflections": {
+          "type": "integer",
+          "description": "Count of completed reflections (server managed)."
+        },
+        "totalReflections": {
+          "type": "integer",
+          "description": "Total reflections available."
+        },
+        "badge": {
+          "type": "string",
+          "description": "Status badge label.",
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Account creation ISO 8601 timestamp.",
+          "maxLength": 64
+        },
+        "lastLoginAt": {
+          "type": "string",
+          "description": "Last login ISO 8601 timestamp.",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Profile update ISO 8601 timestamp.",
+          "maxLength": 64
+        }
+      },
+      "required": ["id", "fullName", "email", "age", "classGrade", "schoolName"]
+    },
+    "Draft": {
+      "title": "Questionnaire Draft",
+      "description": "In-progress student questionnaire responses and navigation section.",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string",
+          "description": "Student Firebase Auth UID."
+        },
+        "answers": {
+          "type": "object",
+          "description": "Serialized response map keyed by question number."
+        },
+        "currentSection": {
+          "type": "integer",
+          "description": "Current active section index (1 to 14)."
+        },
+        "version": {
+          "type": "integer",
+          "description": "Questionnaire version number."
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Draft auto-save ISO 8601 timestamp.",
+          "maxLength": 64
+        }
+      },
+      "required": ["studentId", "answers", "currentSection"]
+    },
+    "Submission": {
+      "title": "Final Questionnaire Submission",
+      "description": "Final immutable questionnaire responses submitted by a student.",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string",
+          "description": "Student Firebase Auth UID."
+        },
+        "answers": {
+          "type": "object",
+          "description": "Complete question-to-answer dictionary."
+        },
+        "version": {
+          "type": "integer",
+          "description": "Questionnaire version at submission time."
+        },
+        "submittedAt": {
+          "type": "string",
+          "description": "Final submission ISO 8601 timestamp.",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Record creation ISO 8601 timestamp.",
+          "maxLength": 64
+        }
+      },
+      "required": ["studentId", "answers", "version", "submittedAt"]
+    },
+    "Questionnaire": {
+      "title": "Questionnaire Definition",
+      "description": "Authoritative questions, sections, and intros published by the designated administrator.",
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "description": "Published version number."
+        },
+        "intro": {
+          "type": "object",
+          "description": "Introductory copy and instructions."
+        },
+        "outro": {
+          "type": "object",
+          "description": "Concluding guidance."
+        },
+        "sections": {
+          "type": "array",
+          "description": "Sections configuration list."
+        },
+        "questions": {
+          "type": "array",
+          "description": "Full set of questions."
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Publish date timestamp.",
+          "maxLength": 64
+        }
+      },
+      "required": ["version", "sections", "questions"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Student profiles. Access limited to owner student and designated administrator."
+    },
+    "/drafts/{studentId}": {
+      "schema": "Draft",
+      "description": "In-progress response drafts. Editable only by owner before final submission."
+    },
+    "/submissions/{studentId}": {
+      "schema": "Submission",
+      "description": "Immutable final questionnaire answers. Create-once by owner; read-only for admin."
+    },
+    "/questionnaires/{documentId}": {
+      "schema": "Questionnaire",
+      "description": "Questionnaire bank and configuration. Read-only for authenticated students; admin editable."
+    }
+  }
+}

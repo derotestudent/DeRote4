@@ -27,6 +27,7 @@ import { auth, db } from './firebase';
 import {
   fetchStudentProfileOutcome,
   saveStudentProfileOutcome,
+  updateStudentProfileOutcome,
   isStudentProfileComplete,
   KNOWN_PLACEHOLDER_SCHOOLS,
 } from './firestoreBackend';
@@ -831,18 +832,20 @@ export async function updateStudentProfile(updates: {
     return { success: false, error: 'Please select your class.' };
   }
 
-  const updated: LocalStudentAccount = {
-    ...activeStudent,
+  const badgeText =
+    cleanClass === 'Others'
+      ? 'Student'
+      : cleanClass === 'Higher'
+      ? 'Higher Education'
+      : `Class ${cleanClass} Student`;
+
+  const updateResult = await updateStudentProfileOutcome(activeStudent.id, {
     age: cleanAge,
     classGrade: cleanClass,
-    badge: cleanClass === 'Others' ? 'Student' : `Class ${cleanClass} Student`,
-    lastLoginAt: new Date().toISOString(),
-  };
+  });
 
-  const saveResult = await saveStudentProfileOutcome(updated);
-
-  if (!saveResult.success) {
-    const errOutcome = saveResult as { success: false; code: string; message: string };
+  if (!updateResult.success) {
+    const errOutcome = updateResult as { success: false; code: string; message: string };
     return {
       success: false,
       errorCode: errOutcome.code,
@@ -850,10 +853,15 @@ export async function updateStudentProfile(updates: {
     };
   }
 
-  activeStudent = saveResult.profile;
+  activeStudent = {
+    ...activeStudent,
+    age: cleanAge,
+    classGrade: cleanClass,
+    badge: badgeText,
+  };
   notifyStudentListeners();
 
-  return { success: true, student: saveResult.profile };
+  return { success: true, student: activeStudent };
 }
 
 /**

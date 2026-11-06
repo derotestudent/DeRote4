@@ -1,15 +1,17 @@
 import { QUESTIONNAIRE_VERSION, QUESTIONS, SECTIONS } from '../data/questionnaire';
-import { getCurrentStudent } from './localAuth';
+import { getCurrentStudent, onLocalAuthChange } from './localAuth';
 import {
-  saveDraftToBackend,
+  saveDraftToBackendOutcome,
   loadDraftFromBackend,
-  saveSubmissionToBackend,
+  saveSubmissionToBackendOutcome,
   getSubmissionFromBackend,
+  deleteDraftFromBackend,
 } from './firestoreBackend';
 
 export type StudentAnswers = Record<number, string | string[]>;
 
 export interface DraftData {
+  studentId?: string;
   answers: StudentAnswers;
   currentSection: number;
   version: number;
@@ -17,55 +19,323 @@ export interface DraftData {
 }
 
 export interface SubmissionData {
+  studentId?: string;
   answers: StudentAnswers;
   version: number;
   submittedAt: string;
 }
 
-const DRAFT_STORAGE_KEY = 'derote_student_questionnaire_draft';
-const SUBMISSION_STORAGE_KEY = 'derote_student_questionnaire_submission';
+export type AutosaveStatus = 'idle' | 'saving' | 'saved' | 'offline' | 'failed';
+
+export interface SaveStateInfo {
+  status: AutosaveStatus;
+  lastSavedAt?: string;
+  error?: string;
+}
+
+// -----------------------------------------------------------------------------
+// SHARED-DEVICE DATA ISOLATION HELPERS
+// -----------------------------------------------------------------------------
 
 /**
- * Loads draft answers from local cache, with automatic cloud restore from Firestore backend.
+ * Namespaces draft local cache key using authenticated student UID.
+ * Prevents cross-student data leakage on shared devices.
  */
-export async function loadDraft(): Promise<{ answers: StudentAnswers; currentSection: number } | null> {
-  const current = getCurrentStudent();
+export function getDraftStorageKey(uid?: string | null): string {
+  const clean = uid ? uid.trim() : '';
+  return clean ? `derote_draft_${clean}` : 'derote_draft_guest';
+}
 
-  // 1. Check local storage first for fast response
-  try {
-    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as DraftData;
-      if (parsed.answers && Object.keys(parsed.answers).length > 0) {
-        return {
-          answers: parsed.answers,
-          currentSection: typeof parsed.currentSection === 'number' ? parsed.currentSection : 1,
-        };
-      }
+/**
+ * Namespaces submission local cache key using authenticated student UID.
+ */
+export function getSubmissionStorageKey(uid?: string | null): string {
+  const clean = uid ? uid.trim() : '';
+  return clean ? `derote_submission_${clean}` : 'derote_submission_guest';
+}
+
+// -----------------------------------------------------------------------------
+// AUTOSAVE MANAGER (DEBOUNCED & FLUSHABLE)
+// -----------------------------------------------------------------------------
+
+let currentSaveState: SaveStateInfo = { status: 'idle' };
+const stateListeners: Set<(info: SaveStateInfo) => void> = new Set();
+
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingDraft: { answers: StudentAnswers; section: number; version: number } | null = null;
+let activeUidForPending: string | null = null;
+
+function notifyState(info: SaveStateInfo) {
+  currentSaveState = info;
+  stateListeners.forEach((listener) => {
+    try {
+      listener(info);
+    } catch (e) {
+      console.warn('Error in autosave state listener:', e);
     }
-  } catch (err) {
-    console.error('Failed to load draft from localStorage', err);
+  });
+}
+
+/**
+ * Subscribes to autosave state changes (saving, saved, offline, failed).
+ */
+export function onAutosaveStateChange(listener: (info: SaveStateInfo) => void): () => void {
+  stateListeners.add(listener);
+  listener(currentSaveState);
+  return () => {
+    stateListeners.delete(listener);
+  };
+}
+
+/**
+ * Clears in-memory debounce timers and pending changes (e.g. during sign out).
+ */
+export function clearActiveDraftSession(): void {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  pendingDraft = null;
+  activeUidForPending = null;
+  notifyState({ status: 'idle' });
+}
+
+// Automatically clear draft session on sign-out to prevent shared-device data leakage
+onLocalAuthChange((student) => {
+  if (!student) {
+    clearActiveDraftSession();
+  }
+});
+
+// Listen to browser network connectivity changes to automatically sync when reconnected
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    if (pendingDraft && activeUidForPending) {
+      flushPendingDraft().catch(() => {});
+    } else if (currentSaveState.status === 'offline') {
+      notifyState({ status: 'idle' });
+    }
+  });
+
+  window.addEventListener('offline', () => {
+    notifyState({
+      status: 'offline',
+      error: 'Working offline. Answers saved locally on this device.',
+    });
+  });
+}
+
+/**
+ * Executes the cloud draft write for pending changes.
+ */
+async function executeCloudSave(
+  uid: string,
+  answers: StudentAnswers,
+  section: number,
+  version: number
+): Promise<SaveStateInfo> {
+  const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
+  if (!isOnline) {
+    const offlineState: SaveStateInfo = {
+      status: 'offline',
+      lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      error: 'Network offline. Answers saved locally on this device and will sync automatically when reconnected.',
+    };
+    notifyState(offlineState);
+    return offlineState;
   }
 
-  // 2. If no local draft found, try loading from Firestore backend
-  if (current?.id) {
+  notifyState({ status: 'saving' });
+
+  try {
+    const outcome = await saveDraftToBackendOutcome(uid, answers, section, version);
+    if (outcome.success) {
+      const savedState: SaveStateInfo = {
+        status: 'saved',
+        lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      };
+      notifyState(savedState);
+      return savedState;
+    } else {
+      const errRes = outcome as { success: false; code: string; message: string };
+      const failedState: SaveStateInfo = {
+        status: 'failed',
+        error: errRes.message || 'Cloud sync failed. Answers remain protected on this device.',
+      };
+      notifyState(failedState);
+      return failedState;
+    }
+  } catch (err: unknown) {
+    const message = (err as { message?: string })?.message || 'Network error saving draft to cloud.';
+    const failedState: SaveStateInfo = {
+      status: 'failed',
+      error: message,
+    };
+    notifyState(failedState);
+    return failedState;
+  }
+}
+
+/**
+ * Queues a draft save with debouncing (default 800ms) for typing,
+ * or immediate write when requested (for choice questions or navigation).
+ */
+export function queueDraftSave(
+  answers: StudentAnswers,
+  currentSection: number,
+  options?: { immediate?: boolean; version?: number }
+): void {
+  const current = getCurrentStudent();
+  const uid = current?.id || null;
+
+  const version = options?.version || QUESTIONNAIRE_VERSION;
+  pendingDraft = { answers, section: currentSection, version };
+  activeUidForPending = uid;
+
+  // 1. Always update local namespaced cache immediately for zero data loss
+  if (uid && typeof localStorage !== 'undefined') {
     try {
-      const cloudDraft = await loadDraftFromBackend(current.id);
-      if (cloudDraft && Object.keys(cloudDraft.answers).length > 0) {
-        // Cache locally for offline availability
-        localStorage.setItem(
-          DRAFT_STORAGE_KEY,
-          JSON.stringify({
-            answers: cloudDraft.answers,
-            currentSection: cloudDraft.currentSection,
-            version: QUESTIONNAIRE_VERSION,
-            updatedAt: new Date().toISOString(),
-          })
-        );
-        return cloudDraft;
+      const payload: DraftData = {
+        studentId: uid,
+        answers,
+        currentSection,
+        version,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(getDraftStorageKey(uid), JSON.stringify(payload));
+    } catch (err) {
+      console.warn('Could not cache draft locally:', err);
+    }
+  }
+
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+
+  if (!uid) {
+    notifyState({ status: 'offline', error: 'Not authenticated with cloud database.' });
+    return;
+  }
+
+  if (options?.immediate) {
+    executeCloudSave(uid, answers, currentSection, version).catch(() => {});
+  } else {
+    notifyState({ status: 'saving' });
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      if (pendingDraft && activeUidForPending === uid) {
+        executeCloudSave(uid, pendingDraft.answers, pendingDraft.section, pendingDraft.version).catch(() => {});
+      }
+    }, 800);
+  }
+}
+
+/**
+ * Immediately flushes any pending draft changes to cloud (used on section navigation).
+ */
+export async function flushPendingDraft(): Promise<SaveStateInfo> {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  if (!pendingDraft || !activeUidForPending) {
+    return currentSaveState;
+  }
+  const { answers, section, version } = pendingDraft;
+  const uid = activeUidForPending;
+  pendingDraft = null;
+  return await executeCloudSave(uid, answers, section, version);
+}
+
+/**
+ * Retries saving the current draft after a failure.
+ */
+export async function retryFailedSave(): Promise<SaveStateInfo> {
+  const current = getCurrentStudent();
+  if (!current?.id) {
+    const s: SaveStateInfo = { status: 'failed', error: 'Please sign in to save your draft.' };
+    notifyState(s);
+    return s;
+  }
+  const draft = await loadDraft(current.id);
+  if (!draft) {
+    const s: SaveStateInfo = { status: 'idle' };
+    notifyState(s);
+    return s;
+  }
+  return await executeCloudSave(current.id, draft.answers, draft.currentSection, draft.version || QUESTIONNAIRE_VERSION);
+}
+
+// -----------------------------------------------------------------------------
+// DRAFT RESTORATION & RESUME (STUDENT-SPECIFIC)
+// -----------------------------------------------------------------------------
+
+/**
+ * Loads draft answers for the authenticated student.
+ * Priority:
+ * 1. Cloud Firestore draft (authoritative)
+ * 2. Namespaced local storage draft (offline fallback)
+ * Never loads un-namespaced or another student's draft.
+ */
+export async function loadDraft(
+  explicitUid?: string
+): Promise<{ answers: StudentAnswers; currentSection: number; version: number } | null> {
+  const current = getCurrentStudent();
+  const uid = explicitUid || current?.id;
+
+  if (!uid) {
+    return null;
+  }
+
+  // 1. Attempt to restore from cloud Firestore first if online
+  if (typeof navigator === 'undefined' || navigator.onLine) {
+    try {
+      const cloudDraft = await loadDraftFromBackend(uid);
+      if (cloudDraft && cloudDraft.answers && Object.keys(cloudDraft.answers).length > 0) {
+        // Cache in namespaced local storage
+        if (typeof localStorage !== 'undefined') {
+          try {
+            localStorage.setItem(
+              getDraftStorageKey(uid),
+              JSON.stringify({
+                studentId: uid,
+                answers: cloudDraft.answers,
+                currentSection: cloudDraft.currentSection,
+                version: cloudDraft.version || QUESTIONNAIRE_VERSION,
+                updatedAt: cloudDraft.updatedAt || new Date().toISOString(),
+              })
+            );
+          } catch {}
+        }
+        return {
+          answers: cloudDraft.answers,
+          currentSection: cloudDraft.currentSection,
+          version: cloudDraft.version || QUESTIONNAIRE_VERSION,
+        };
       }
     } catch (err) {
-      console.warn('Failed to load draft from Firestore backend', err);
+      console.warn('Could not retrieve cloud draft, checking namespaced local cache:', err);
+    }
+  }
+
+  // 2. Fall back to student-specific namespaced local storage
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(getDraftStorageKey(uid));
+      if (raw) {
+        const parsed = JSON.parse(raw) as DraftData;
+        if (parsed.answers && Object.keys(parsed.answers).length > 0) {
+          return {
+            answers: parsed.answers,
+            currentSection: typeof parsed.currentSection === 'number' ? parsed.currentSection : 1,
+            version: parsed.version || QUESTIONNAIRE_VERSION,
+          };
+        }
+      }
+    } catch (err) {
+      console.error('Failed to parse namespaced local draft:', err);
     }
   }
 
@@ -73,133 +343,217 @@ export async function loadDraft(): Promise<{ answers: StudentAnswers; currentSec
 }
 
 /**
- * Saves draft answers to local storage and syncs to Firestore backend.
+ * Backward-compatible helper: saves draft answers.
  */
 export async function saveDraft(answers: StudentAnswers, currentSection: number): Promise<void> {
-  const payload: DraftData = {
-    answers,
-    currentSection,
-    version: QUESTIONNAIRE_VERSION,
-    updatedAt: new Date().toISOString(),
-  };
+  queueDraftSave(answers, currentSection, { immediate: false });
+}
 
-  // 1. Write through local cache
-  try {
-    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
-  } catch (err) {
-    console.error('Failed to save draft to localStorage', err);
-  }
+// -----------------------------------------------------------------------------
+// FINAL SUBMISSION & LOCKING
+// -----------------------------------------------------------------------------
 
-  // 2. Sync to Firestore backend asynchronously
-  const current = getCurrentStudent();
-  if (current?.id) {
-    saveDraftToBackend(current.id, answers, currentSection).catch((err) => {
-      console.warn('Async cloud draft save warning:', err);
-    });
-  }
+export interface SubmissionOutcome {
+  success: boolean;
+  error?: string;
+  errorCode?: string;
+  submittedAt?: string;
 }
 
 /**
- * Submits final questionnaire answers to local storage and Firestore backend.
+ * Submits finalized questionnaire answers.
+ * Requires positive server confirmation before declaring success or updating local cache.
  */
 export async function submitQuestionnaire(answers: StudentAnswers): Promise<void> {
-  const payload: SubmissionData = {
-    answers,
-    version: QUESTIONNAIRE_VERSION,
-    submittedAt: new Date().toISOString(),
-  };
-
-  // 1. Save to local storage
-  try {
-    localStorage.setItem(SUBMISSION_STORAGE_KEY, JSON.stringify(payload));
-    // Clear draft on successful submission
-    localStorage.removeItem(DRAFT_STORAGE_KEY);
-  } catch (err) {
-    console.error('Failed to submit questionnaire to localStorage', err);
-    throw err;
-  }
-
-  // 2. Sync to Firestore backend
-  const current = getCurrentStudent();
-  if (current?.id) {
-    await saveSubmissionToBackend(current.id, payload).catch((err) => {
-      console.warn('Could not sync submission to Firestore backend immediately:', err);
-    });
+  const res = await submitQuestionnaireOutcome(answers);
+  if (!res.success) {
+    throw new Error(res.error || 'Failed to submit questionnaire to the server.');
   }
 }
 
 /**
- * Checks if current student has submitted questionnaire.
+ * Executes final questionnaire submission with comprehensive outcome tracking.
  */
-export async function hasSubmitted(): Promise<boolean> {
-  // Check local storage
-  try {
-    const raw = localStorage.getItem(SUBMISSION_STORAGE_KEY);
-    if (raw) return true;
-  } catch (err) {
-    console.error('Failed to check submission status in localStorage', err);
-  }
-
-  // Check active student account record
+export async function submitQuestionnaireOutcome(answers: StudentAnswers): Promise<SubmissionOutcome> {
   const current = getCurrentStudent();
-  if (current && (current.completedReflections ?? 0) > 0) {
-    return true;
+  if (!current?.id) {
+    return {
+      success: false,
+      errorCode: 'unauthenticated',
+      error: 'You must be signed in to submit your reflection questionnaire.',
+    };
   }
 
-  // Check Firestore backend
-  if (current?.id) {
-    try {
-      const cloudSub = await getSubmissionFromBackend(current.id);
-      if (cloudSub) return true;
-    } catch {
-      // offline fallback
+  const uid = current.id;
+
+  // Flush any pending draft changes first
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+
+  // Check if student already has a submission in cloud (submission locking)
+  try {
+    const existing = await getSubmissionFromBackend(uid);
+    if (existing) {
+      // Cache locally to lock UI
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(getSubmissionStorageKey(uid), JSON.stringify(existing));
+        localStorage.removeItem(getDraftStorageKey(uid));
+      }
+      return {
+        success: false,
+        errorCode: 'already-submitted',
+        error: 'Your assessment questionnaire has already been submitted and is locked against modifications.',
+      };
     }
+  } catch {}
+
+  const submittedAt = new Date().toISOString();
+  const payload: SubmissionData = {
+    studentId: uid,
+    answers,
+    version: QUESTIONNAIRE_VERSION,
+    submittedAt,
+  };
+
+  const cloudOutcome = await saveSubmissionToBackendOutcome(uid, payload);
+  if (!cloudOutcome.success) {
+    const errRes = cloudOutcome as { success: false; code: string; message: string };
+    return {
+      success: false,
+      errorCode: errRes.code,
+      error: `Cloud submission rejected (${errRes.code}): ${errRes.message}. Your answers are preserved. Please click Retry.`,
+    };
+  }
+
+  // Only AFTER positive cloud confirmation:
+  // 1. Mark namespaced local submission cache
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(getSubmissionStorageKey(uid), JSON.stringify(payload));
+      localStorage.removeItem(getDraftStorageKey(uid));
+    } catch {}
+  }
+
+  // 2. Clean up cloud draft document now that final submission exists
+  deleteDraftFromBackend(uid).catch(() => {});
+
+  pendingDraft = null;
+  activeUidForPending = null;
+  notifyState({ status: 'saved', lastSavedAt: new Date().toLocaleTimeString() });
+
+  return {
+    success: true,
+    submittedAt,
+  };
+}
+
+/**
+ * Authoritatively checks if current student has submitted questionnaire.
+ * Priority:
+ * 1. Cloud Firestore submissions/{uid} (single source of truth)
+ * 2. Namespaced local submission cache
+ */
+export async function hasSubmitted(explicitUid?: string): Promise<boolean> {
+  const current = getCurrentStudent();
+  const uid = explicitUid || current?.id;
+
+  if (!uid) {
+    return false;
+  }
+
+  // 1. Cloud Firestore check (authoritative source)
+  if (typeof navigator === 'undefined' || navigator.onLine) {
+    try {
+      const cloudSub = await getSubmissionFromBackend(uid);
+      if (cloudSub) {
+        if (typeof localStorage !== 'undefined') {
+          try {
+            localStorage.setItem(getSubmissionStorageKey(uid), JSON.stringify(cloudSub));
+            localStorage.removeItem(getDraftStorageKey(uid));
+          } catch {}
+        }
+        return true;
+      }
+    } catch (err) {
+      console.warn('Cloud submission check offline fallback:', err);
+    }
+  }
+
+  // 2. Namespaced local cache check
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(getSubmissionStorageKey(uid));
+      if (raw) return true;
+    } catch {}
   }
 
   return false;
 }
 
 /**
- * Resets submission for testing / retake.
+ * Retrieves submission data from local namespaced cache or Firestore backend.
  */
-export async function resetSubmission(): Promise<void> {
-  try {
-    localStorage.removeItem(SUBMISSION_STORAGE_KEY);
-    localStorage.removeItem(DRAFT_STORAGE_KEY);
-  } catch (err) {
-    console.error('Failed to reset submission in localStorage', err);
-  }
-}
-
-/**
- * Retrieves submission data from local cache or Firestore backend.
- */
-export async function getSubmissionData(): Promise<SubmissionData | null> {
-  try {
-    const raw = localStorage.getItem(SUBMISSION_STORAGE_KEY);
-    if (raw) {
-      return JSON.parse(raw) as SubmissionData;
-    }
-  } catch (err) {
-    console.error('Failed to get submission data from localStorage', err);
-  }
-
+export async function getSubmissionData(explicitUid?: string): Promise<SubmissionData | null> {
   const current = getCurrentStudent();
-  if (current?.id) {
+  const uid = explicitUid || current?.id;
+
+  if (!uid) {
+    return null;
+  }
+
+  // 1. Cloud fetch if online
+  if (typeof navigator === 'undefined' || navigator.onLine) {
     try {
-      const cloudSub = await getSubmissionFromBackend(current.id);
+      const cloudSub = await getSubmissionFromBackend(uid);
       if (cloudSub) {
-        localStorage.setItem(SUBMISSION_STORAGE_KEY, JSON.stringify(cloudSub));
+        if (typeof localStorage !== 'undefined') {
+          try {
+            localStorage.setItem(getSubmissionStorageKey(uid), JSON.stringify(cloudSub));
+          } catch {}
+        }
         return cloudSub;
       }
     } catch (err) {
-      console.warn('Could not retrieve cloud submission data', err);
+      console.warn('Could not retrieve cloud submission data:', err);
     }
+  }
+
+  // 2. Namespaced local cache fallback
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(getSubmissionStorageKey(uid));
+      if (raw) {
+        return JSON.parse(raw) as SubmissionData;
+      }
+    } catch {}
   }
 
   return null;
 }
 
+/**
+ * Resets local submission for demo/testing mode only.
+ * Production submissions in Firestore remain permanently locked under security rules.
+ */
+export async function resetSubmission(explicitUid?: string): Promise<void> {
+  const current = getCurrentStudent();
+  const uid = explicitUid || current?.id;
+  if (!uid || typeof localStorage === 'undefined') return;
+
+  try {
+    localStorage.removeItem(getSubmissionStorageKey(uid));
+    localStorage.removeItem(getDraftStorageKey(uid));
+  } catch (err) {
+    console.error('Failed to reset demo submission in localStorage:', err);
+  }
+}
+
+/**
+ * Computes questionnaire progress for the current student.
+ * Total sections is dynamically derived from SECTIONS.length.
+ */
 export async function getQuestionnaireProgress(): Promise<{
   hasDraft: boolean;
   currentSection: number;
@@ -257,5 +611,3 @@ export async function getQuestionnaireProgress(): Promise<{
 export async function getOrSeedStudentSubmission(): Promise<SubmissionData | null> {
   return getSubmissionData();
 }
-
-

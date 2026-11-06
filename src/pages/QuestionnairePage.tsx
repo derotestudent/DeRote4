@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  AlertCircle,
   Clock,
   Compass,
   FileCheck,
@@ -10,6 +11,9 @@ import {
   Sparkles,
   Loader2,
   Home,
+  WifiOff,
+  RefreshCw,
+  Lock,
 } from 'lucide-react';
 import {
   INTRO,
@@ -19,13 +23,19 @@ import {
   Question,
   ChoiceQuestion,
   TextQuestion,
+  QUESTIONNAIRE_VERSION,
 } from '../data/questionnaire';
 import {
   loadDraft,
-  saveDraft,
-  submitQuestionnaire,
+  queueDraftSave,
+  flushPendingDraft,
+  retryFailedSave,
+  onAutosaveStateChange,
+  SaveStateInfo,
+  submitQuestionnaireOutcome,
   hasSubmitted,
   resetSubmission,
+  getSubmissionData,
   StudentAnswers,
 } from '../services/api';
 import {
@@ -51,49 +61,72 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
   const [answers, setAnswers] = useState<StudentAnswers>({});
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
-  const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [isLockedSubmission, setIsLockedSubmission] = useState<boolean>(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+
+  const [saveState, setSaveState] = useState<SaveStateInfo>({ status: 'idle' });
   const [sections, setSections] = useState(SECTIONS);
   const [questions, setQuestions] = useState(QUESTIONS);
+  const [draftVersion, setDraftVersion] = useState<number>(QUESTIONNAIRE_VERSION);
 
-  const totalSections = sections.length; // sections from backend or fallback default
+  const totalSections = sections.length;
+  const isMountedRef = useRef<boolean>(true);
 
-  // Initialize draft and check submission status on mount
+  // Subscribe to real-time autosave status updates
   useEffect(() => {
-    let isMounted = true;
+    const unsub = onAutosaveStateChange((info) => {
+      if (isMountedRef.current) {
+        setSaveState(info);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Initialize draft and authoritatively check submission status on mount
+  useEffect(() => {
+    isMountedRef.current = true;
 
     async function init() {
+      // 1. Authoritative check: has student already submitted to Firestore?
       const submitted = await hasSubmitted();
-      if (!isMounted) return;
+      if (!isMountedRef.current) return;
 
       if (submitted) {
+        setIsLockedSubmission(true);
+        // Load submitted answers to display on confirmation screen
+        const existingSub = await getSubmissionData();
+        if (existingSub?.answers) {
+          setAnswers(existingSub.answers);
+        }
         setView('confirmation');
         setIsLoaded(true);
         return;
       }
 
-      // Load questions from Firestore backend if available, or auto-seed
+      // 2. Load questions from Firestore backend if available, or auto-seed
       try {
         const cloudQ = await getQuestionnaireFromBackend();
         if (cloudQ && cloudQ.questions && cloudQ.questions.length > 0) {
-          if (isMounted) {
+          if (isMountedRef.current) {
             setSections(cloudQ.sections);
             setQuestions(cloudQ.questions);
           }
         } else {
-          // Initialize/seed questions in Firestore backend
           seedQuestionnaireToBackend(false).catch(() => {});
         }
       } catch (err) {
         console.warn('Backend questionnaire load fallback to local:', err);
       }
 
+      // 3. Load active student's draft
       const draft = await loadDraft();
-      if (!isMounted) return;
+      if (!isMountedRef.current) return;
 
       if (draft) {
         setAnswers(draft.answers || {});
+        setDraftVersion(draft.version || QUESTIONNAIRE_VERSION);
 
-        // If About Me Part 1 responses already exist, ensure the student profile is synced
+        // Sync Part 1 if present
         if (draft.answers && (draft.answers[1] || draft.answers[2] || draft.answers[3] || draft.answers[4])) {
           syncStudentProfileFromPart1(draft.answers);
         }
@@ -116,7 +149,9 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
     init();
 
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
+      // Flush any pending changes when user leaves questionnaire page
+      flushPendingDraft().catch(() => {});
     };
   }, [totalSections]);
 
@@ -128,28 +163,29 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
     return questions.filter((q) => q.section === currentSection);
   }, [questions, currentSection]);
 
-  const updateDraft = (updated: StudentAnswers, sec: number) => {
-    saveDraft(updated, sec);
-    setLastSaved('Draft auto-saved');
-  };
-
+  // Handle typing with debounced autosave
   const handleTextChange = (questionNumber: number, value: string) => {
+    if (isLockedSubmission) return;
     setAnswers((prev) => {
       const updated = { ...prev, [questionNumber]: value };
-      updateDraft(updated, currentSection);
+      queueDraftSave(updated, currentSection, { immediate: false, version: draftVersion });
       return updated;
     });
   };
 
+  // Handle single-choice with immediate autosave
   const handleSingleChange = (questionNumber: number, option: string) => {
+    if (isLockedSubmission) return;
     setAnswers((prev) => {
       const updated = { ...prev, [questionNumber]: option };
-      updateDraft(updated, currentSection);
+      queueDraftSave(updated, currentSection, { immediate: true, version: draftVersion });
       return updated;
     });
   };
 
+  // Handle multi-choice with immediate autosave
   const handleMultiChange = (questionNumber: number, option: string) => {
+    if (isLockedSubmission) return;
     setAnswers((prev) => {
       const current = (prev[questionNumber] as string[]) || [];
       const isSelected = current.includes(option);
@@ -166,33 +202,36 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
       }
 
       const updated = { ...prev, [questionNumber]: updatedList };
-      updateDraft(updated, currentSection);
+      queueDraftSave(updated, currentSection, { immediate: true, version: draftVersion });
       return updated;
     });
   };
 
-  const handleBegin = () => {
+  // Section navigation handlers flush any pending text changes before view transition
+  const handleBegin = async () => {
+    await flushPendingDraft();
     setCurrentSection(1);
     setView('section');
-    updateDraft(answers, 1);
+    queueDraftSave(answers, 1, { immediate: true, version: draftVersion });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleBackFromSection = () => {
+  const handleBackFromSection = async () => {
+    await flushPendingDraft();
     if (currentSection <= 1) {
       setCurrentSection(0);
       setView('intro');
-      updateDraft(answers, 0);
+      queueDraftSave(answers, 0, { immediate: true, version: draftVersion });
     } else {
       const prev = currentSection - 1;
       setCurrentSection(prev);
-      updateDraft(answers, prev);
+      queueDraftSave(answers, prev, { immediate: true, version: draftVersion });
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleNextFromSection = () => {
-    // When departing About Me Part 1, strictly use Part 1 information to build/update student profile & dashboard
+  const handleNextFromSection = async () => {
+    await flushPendingDraft();
     if (currentSection === 1) {
       syncStudentProfileFromPart1(answers);
     }
@@ -201,11 +240,11 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
       const reviewSectionId = totalSections + 1;
       setCurrentSection(reviewSectionId);
       setView('review');
-      updateDraft(answers, reviewSectionId);
+      queueDraftSave(answers, reviewSectionId, { immediate: true, version: draftVersion });
     } else {
       const next = currentSection + 1;
       setCurrentSection(next);
-      updateDraft(answers, next);
+      queueDraftSave(answers, next, { immediate: true, version: draftVersion });
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -221,32 +260,94 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
     }).length;
   };
 
+  // Submit Questionnaire with positive cloud server confirmation
   const handleSubmit = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || isLockedSubmission) return;
     setIsSubmitting(true);
+    setSubmissionError(null);
+
     try {
-      // Ensure student profile is up to date using strictly About Me Part 1 information
       syncStudentProfileFromPart1(answers);
-      await submitQuestionnaire(answers);
-      setView('confirmation');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err) {
-      console.error('Submission failed', err);
+      const outcome = await submitQuestionnaireOutcome(answers);
+
+      if (outcome.success) {
+        setIsLockedSubmission(true);
+        setView('confirmation');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        setSubmissionError(outcome.error || 'Submission could not be confirmed by the server. Please try again.');
+      }
+    } catch (err: unknown) {
+      const msg = (err as { message?: string })?.message || 'An unexpected error occurred during submission.';
+      setSubmissionError(msg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // Demo Retake Handler (Development / Testing Mode Only)
   const handleRetake = async () => {
     await resetSubmission();
     const currStudent = getCurrentStudent();
     if (currStudent) {
       await resetStudentQuestionnaireSession(currStudent);
     }
+    setIsLockedSubmission(false);
     setAnswers({});
     setCurrentSection(1);
     setView('section');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Header Save Status Indicator
+  const renderSaveStatus = () => {
+    if (isLockedSubmission) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-700">
+          <Lock className="w-3 h-3 text-emerald-600" />
+          <span>Submitted & Locked</span>
+        </span>
+      );
+    }
+
+    switch (saveState.status) {
+      case 'saving':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EBF4FE] border border-[#CCE3FC] text-[11px] font-semibold text-[#0866C6]">
+            <Loader2 className="w-3 h-3 animate-spin text-[#0866C6]" />
+            <span>Saving draft...</span>
+          </span>
+        );
+      case 'saved':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-700">
+            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+            <span>Saved {saveState.lastSavedAt ? `at ${saveState.lastSavedAt}` : 'to cloud'}</span>
+          </span>
+        );
+      case 'offline':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-700">
+            <WifiOff className="w-3 h-3 text-amber-600" />
+            <span>Offline — Saved locally</span>
+          </span>
+        );
+      case 'failed':
+        return (
+          <button
+            type="button"
+            onClick={() => retryFailedSave()}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 border border-red-200 text-[11px] font-semibold text-red-700 hover:bg-red-100 transition-colors cursor-pointer"
+            title="Click to retry saving your draft"
+          >
+            <AlertCircle className="w-3 h-3 text-red-600" />
+            <span>Save failed — Retry</span>
+            <RefreshCw className="w-2.5 h-2.5 text-red-600" />
+          </button>
+        );
+      default:
+        return null;
+    }
   };
 
   // Top header bar adhering to landing page identity
@@ -261,16 +362,14 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
           <DeRoteWordmark showDescriptor={false} size="sm" />
         </button>
 
-        <div className="flex items-center gap-3">
-          {lastSaved && (
-            <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-[#5A6E85]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#0866C6] animate-pulse" />
-              {lastSaved}
-            </span>
-          )}
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {renderSaveStatus()}
           <button
             type="button"
-            onClick={() => onNavigate('/dashboard')}
+            onClick={async () => {
+              await flushPendingDraft();
+              onNavigate('/dashboard');
+            }}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E2EDF8] bg-white hover:bg-[#F2F7FC] text-xs font-semibold text-[#062B50] hover:text-[#0866C6] transition-colors cursor-pointer"
           >
             <Home className="w-3.5 h-3.5 text-[#0866C6]" />
@@ -289,7 +388,7 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
           <Loader2 className="w-6 h-6 text-[#0866C6] animate-spin" />
         </div>
         <p className="text-[#062B50] text-base font-bold">Opening your reflection space...</p>
-        <p className="text-xs text-[#5A6E85] mt-1">Checking saved responses</p>
+        <p className="text-xs text-[#5A6E85] mt-1">Connecting to your secure cloud draft</p>
       </div>
     );
   }
@@ -302,7 +401,6 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
 
         <main className="flex-1 py-8 sm:py-12 px-4 sm:px-6">
           <div className="max-w-2xl mx-auto bg-white border border-[#E2EDF8] p-6 sm:p-10 rounded-3xl shadow-sm">
-            {/* Header with DeRote accent mark */}
             <div className="mb-6">
               <div className="inline-flex items-center gap-1 text-[#0866C6] text-xs font-bold uppercase tracking-wider mb-2">
                 <Sparkles className="w-4 h-4 text-[#0866C6]" />
@@ -328,7 +426,6 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
               </div>
             </div>
 
-            {/* Reassurance Callout Box */}
             <div className="mb-8 p-4 sm:p-5 bg-[#EBF4FE] border-l-4 border-[#0866C6] rounded-r-2xl">
               <p className="text-xs sm:text-sm text-[#062B50] leading-relaxed font-semibold">
                 {INTRO.beforeYouBegin}
@@ -338,19 +435,19 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-[#E8F3FF]">
               <button
                 type="button"
-                onClick={handleBegin}
-                className="w-full sm:w-auto min-h-[48px] px-8 py-3.5 bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-sm sm:text-base rounded-2xl cursor-pointer transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] inline-flex items-center justify-center gap-2"
+                onClick={() => onNavigate('/dashboard')}
+                className="w-full sm:w-auto min-h-[46px] px-6 py-2.5 bg-white border border-[#E2EDF8] text-[#062B50] hover:text-[#0866C6] hover:bg-[#F2F7FC] font-bold text-sm sm:text-base rounded-xl cursor-pointer transition-all shadow-xs inline-flex items-center justify-center gap-2"
               >
-                <span>Begin Questionnaire</span>
-                <ArrowRight className="w-4 h-4" />
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back to Dashboard</span>
               </button>
-
               <button
                 type="button"
-                onClick={() => onNavigate('/')}
-                className="text-xs sm:text-sm font-semibold text-[#5A6E85] hover:text-[#062B50] transition-colors py-2 px-3"
+                onClick={handleBegin}
+                className="w-full sm:w-auto min-h-[46px] px-8 py-2.5 bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-sm sm:text-base rounded-xl cursor-pointer transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] inline-flex items-center justify-center gap-2"
               >
-                Return to home page
+                <span>Begin Reflection</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -359,47 +456,41 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
     );
   }
 
-  // 2. Questionnaire Section Screen
+  // 2. Section Screen
   if (view === 'section') {
-    const progressPercent = Math.round((currentSection / totalSections) * 100);
-
     return (
       <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#F2F7FC]/80 via-white to-[#F4F8FD] text-[#102C46]">
         {renderHeader()}
 
         <main className="flex-1 py-6 sm:py-10 px-4 sm:px-6">
-          <div className="max-w-2xl mx-auto space-y-5">
-            {/* Progress Header Card */}
-            <div className="bg-white border border-[#E2EDF8] p-4 sm:p-5 rounded-2xl shadow-xs space-y-3">
-              <div className="flex items-center justify-between text-xs sm:text-sm font-bold text-[#062B50]">
-                <div className="flex items-center gap-2">
-                  <span className="text-[#5A6E85]">Progress</span>
-                  <span className="w-1 h-1 rounded-full bg-[#5A6E85]" />
-                  <span>Section {currentSection} of {totalSections}</span>
-                </div>
-                <span className="bg-[#EBF4FE] text-[#0866C6] px-2.5 py-0.5 rounded-full text-xs font-bold">
-                  {progressPercent}%
+          <div className="max-w-2xl mx-auto space-y-6">
+            {/* Progress Bar & Counter */}
+            <div className="bg-white border border-[#E2EDF8] p-4 sm:p-5 rounded-2xl shadow-xs">
+              <div className="flex items-center justify-between text-xs font-bold text-[#5A6E85] mb-2">
+                <span className="uppercase tracking-wider text-[#0866C6]">
+                  Section {currentSection} of {totalSections}
                 </span>
+                <span>{Math.round((currentSection / totalSections) * 100)}% through questionnaire</span>
               </div>
-              <div className="w-full bg-[#E8F3FF] h-2.5 rounded-full overflow-hidden">
+              <div className="w-full bg-[#E2EDF8] rounded-full h-2 overflow-hidden">
                 <div
-                  className="bg-[#0866C6] h-full rounded-full transition-all duration-300"
-                  style={{ width: `${progressPercent}%` }}
+                  className="bg-[#0866C6] h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${(currentSection / totalSections) * 100}%` }}
                 />
               </div>
             </div>
 
-            {/* Section Title & Intro Card */}
-            <div className="bg-white border border-[#E2EDF8] p-5 sm:p-7 rounded-2xl shadow-xs space-y-2">
-              <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0866C6] uppercase tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#0866C6]" />
-                <span>Section {currentSection}</span>
+            {/* Section Header */}
+            <div className="bg-white border border-[#E2EDF8] p-6 sm:p-8 rounded-3xl shadow-sm">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EBF4FE] text-[#0866C6] text-xs font-bold tracking-wide uppercase mb-2">
+                <Compass className="w-3.5 h-3.5" />
+                <span>Section {sectionData.id}</span>
               </div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-[#062B50] tracking-tight">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-[#062B50] tracking-tight">
                 {sectionData.title}
-              </h2>
+              </h1>
               {sectionData.intro && (
-                <p className="text-sm sm:text-[15px] text-[#5A6E85] leading-relaxed pt-1">
+                <p className="text-xs sm:text-sm text-[#5A6E85] mt-2 italic leading-relaxed bg-[#F8FAFD] p-3 rounded-xl border border-[#EAF2FC]">
                   {sectionData.intro}
                 </p>
               )}
@@ -407,93 +498,109 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
 
             {/* Questions List */}
             <div className="space-y-4">
-              {sectionQuestions.map((q: Question) => {
+              {sectionQuestions.map((q) => {
                 const currentVal = answers[q.n];
 
                 return (
                   <div
                     key={q.n}
-                    className="bg-white border border-[#E2EDF8] p-5 sm:p-6 rounded-2xl shadow-xs space-y-4"
+                    className="bg-white border border-[#E2EDF8] p-5 sm:p-6 rounded-2xl shadow-xs space-y-3"
                   >
-                    <div className="flex items-start gap-3">
+                    <div className="flex items-start gap-2.5">
                       <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-[#EBF4FE] text-[#0866C6] font-bold text-xs shrink-0 mt-0.5">
                         {q.n}
                       </span>
-                      <p className="text-sm sm:text-base font-bold text-[#062B50] leading-snug">
+                      <label className="text-sm sm:text-base font-bold text-[#062B50] leading-snug">
                         {q.text}
-                      </p>
+                      </label>
                     </div>
 
                     {/* Text Question */}
                     {q.type === 'text' && (
                       <div className="pt-1">
-                        <textarea
-                          rows={q.lines || 3}
-                          value={(currentVal as string) || ''}
-                          onChange={(e) => handleTextChange(q.n, e.target.value)}
-                          placeholder="Type your answer here (optional)..."
-                          className="w-full p-3.5 border border-[#E2EDF8] rounded-xl text-sm sm:text-base text-[#102C46] placeholder-[#8EA3B8] focus:outline-none focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 bg-[#F8FAFD] focus:bg-white transition-all"
-                        />
+                        {(q as TextQuestion).lines > 1 ? (
+                          <textarea
+                            rows={(q as TextQuestion).lines}
+                            value={(currentVal as string) || ''}
+                            onChange={(e) => handleTextChange(q.n, e.target.value)}
+                            disabled={isLockedSubmission}
+                            placeholder="Write your thoughts here..."
+                            className="w-full p-3.5 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] text-sm focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all resize-y disabled:bg-[#F8FAFD] disabled:cursor-not-allowed"
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={(currentVal as string) || ''}
+                            onChange={(e) => handleTextChange(q.n, e.target.value)}
+                            disabled={isLockedSubmission}
+                            placeholder="Your answer..."
+                            className="w-full px-4 py-3 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] text-sm focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all disabled:bg-[#F8FAFD] disabled:cursor-not-allowed"
+                          />
+                        )}
                       </div>
                     )}
 
-                    {/* Single Choice Question */}
+                    {/* Single-Choice Question */}
                     {q.type === 'single' && (
-                      <div className="flex flex-col gap-2 pt-1">
-                        {q.options.map((opt, oIdx) => {
+                      <div className="space-y-2 pt-1">
+                        {(q as ChoiceQuestion).options.map((opt) => {
                           const isSelected = currentVal === opt;
                           return (
-                            <label
-                              key={oIdx}
-                              className={`flex items-center min-h-[44px] px-3.5 py-2.5 rounded-xl border cursor-pointer transition-all ${
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => handleSingleChange(q.n, opt)}
+                              disabled={isLockedSubmission}
+                              className={`w-full text-left p-3.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center justify-between ${
                                 isSelected
-                                  ? 'bg-[#F0F6FD] border-[#0866C6] text-[#062B50] font-medium shadow-xs'
-                                  : 'bg-white border-[#E2EDF8] text-[#102C46] hover:bg-[#F4F8FD] hover:border-[#0866C6]/30'
-                              }`}
+                                  ? 'bg-[#EBF4FE] border-[#0866C6] text-[#0866C6] shadow-xs'
+                                  : 'bg-white border-[#E2EDF8] text-[#062B50] hover:border-[#0866C6]/40 hover:bg-[#F9FBFE]'
+                              } disabled:cursor-not-allowed`}
                             >
-                              <input
-                                type="radio"
-                                name={`q_${q.n}`}
-                                checked={isSelected}
-                                onChange={() => handleSingleChange(q.n, opt)}
-                                className="w-4 h-4 accent-[#0866C6] shrink-0"
-                              />
-                              <span className="ml-3 text-sm sm:text-base leading-snug">
-                                {opt}
-                              </span>
-                            </label>
+                              <span>{opt}</span>
+                              <div
+                                className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                  isSelected ? 'border-[#0866C6] bg-[#0866C6]' : 'border-[#CBD5E1] bg-white'
+                                }`}
+                              >
+                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              </div>
+                            </button>
                           );
                         })}
                       </div>
                     )}
 
-                    {/* Multi Choice Question */}
+                    {/* Multi-Choice Question */}
                     {q.type === 'multi' && (
-                      <div className="flex flex-col gap-2 pt-1">
-                        {q.options.map((opt, oIdx) => {
+                      <div className="space-y-2 pt-1">
+                        <p className="text-[11px] font-semibold text-[#8EA3B8] pb-0.5">
+                          Select all that apply
+                        </p>
+                        {(q as ChoiceQuestion).options.map((opt) => {
                           const selectedList = (currentVal as string[]) || [];
-                          const isChecked = selectedList.includes(opt);
-
+                          const isSelected = selectedList.includes(opt);
                           return (
-                            <label
-                              key={oIdx}
-                              className={`flex items-center min-h-[44px] px-3.5 py-2.5 rounded-xl border cursor-pointer transition-all ${
-                                isChecked
-                                  ? 'bg-[#F0F6FD] border-[#0866C6] text-[#062B50] font-medium shadow-xs'
-                                  : 'bg-white border-[#E2EDF8] text-[#102C46] hover:bg-[#F4F8FD] hover:border-[#0866C6]/30'
-                              }`}
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => handleMultiChange(q.n, opt)}
+                              disabled={isLockedSubmission}
+                              className={`w-full text-left p-3.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all cursor-pointer flex items-center justify-between ${
+                                isSelected
+                                  ? 'bg-[#EBF4FE] border-[#0866C6] text-[#0866C6] shadow-xs'
+                                  : 'bg-white border-[#E2EDF8] text-[#062B50] hover:border-[#0866C6]/40 hover:bg-[#F9FBFE]'
+                              } disabled:cursor-not-allowed`}
                             >
-                              <input
-                                type="checkbox"
-                                name={`q_${q.n}_${oIdx}`}
-                                checked={isChecked}
-                                onChange={() => handleMultiChange(q.n, opt)}
-                                className="w-4 h-4 accent-[#0866C6] shrink-0 rounded"
-                              />
-                              <span className="ml-3 text-sm sm:text-base leading-snug">
-                                {opt}
-                              </span>
-                            </label>
+                              <span>{opt}</span>
+                              <div
+                                className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${
+                                  isSelected ? 'border-[#0866C6] bg-[#0866C6]' : 'border-[#CBD5E1] bg-white'
+                                }`}
+                              >
+                                {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
+                              </div>
+                            </button>
                           );
                         })}
                       </div>
@@ -503,15 +610,15 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
               })}
             </div>
 
-            {/* Navigation Buttons Card */}
-            <div className="flex items-center justify-between pt-3">
+            {/* Navigation Buttons */}
+            <div className="flex items-center justify-between pt-2">
               <button
                 type="button"
                 onClick={handleBackFromSection}
-                className="min-h-[46px] px-6 py-2.5 bg-white border border-[#E2EDF8] text-[#062B50] hover:text-[#0866C6] hover:border-[#0866C6]/30 hover:bg-[#F2F7FC] font-bold text-sm sm:text-base rounded-xl cursor-pointer transition-all shadow-xs inline-flex items-center gap-2"
+                className="min-h-[46px] px-6 py-2.5 bg-white border border-[#E2EDF8] text-[#062B50] hover:text-[#0866C6] hover:bg-[#F2F7FC] font-bold text-sm sm:text-base rounded-xl cursor-pointer transition-all shadow-xs inline-flex items-center gap-2"
               >
                 <ArrowLeft className="w-4 h-4" />
-                <span>Back</span>
+                <span>{currentSection <= 1 ? 'Intro' : 'Previous Section'}</span>
               </button>
 
               <button
@@ -519,7 +626,7 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
                 onClick={handleNextFromSection}
                 className="min-h-[46px] px-7 py-2.5 bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-sm sm:text-base rounded-xl cursor-pointer transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] inline-flex items-center gap-2"
               >
-                <span>{currentSection === totalSections ? 'Review Answers' : 'Next Section'}</span>
+                <span>{currentSection >= totalSections ? 'Review All' : 'Next Section'}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -537,18 +644,29 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
 
         <main className="flex-1 py-8 sm:py-12 px-4 sm:px-6">
           <div className="max-w-2xl mx-auto space-y-6">
-            <div className="bg-white border border-[#E2EDF8] p-6 sm:p-8 rounded-3xl shadow-sm space-y-2">
-              <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0866C6] uppercase tracking-wider">
-                <FileCheck className="w-4 h-4 text-[#0866C6]" />
-                <span>Ready for Submission</span>
+            <div className="bg-white border border-[#E2EDF8] p-6 sm:p-8 rounded-3xl shadow-sm">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EBF4FE] text-[#0866C6] text-xs font-bold tracking-wide uppercase mb-2">
+                <FileCheck className="w-3.5 h-3.5" />
+                <span>Final Review</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight">
-                Review Your Answers
+                Review Your Self-Reflection
               </h1>
-              <p className="text-sm sm:text-base text-[#5A6E85] leading-relaxed">
+              <p className="text-xs sm:text-sm text-[#5A6E85] mt-1.5 leading-relaxed">
                 You can review or change your answers below. Every question is reflective and optional—you may submit whenever you feel ready.
               </p>
             </div>
+
+            {/* Submission Error Alert */}
+            {submissionError && (
+              <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm flex items-start gap-2.5 animate-in fade-in duration-200">
+                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold">Submission Pending Server Confirmation</p>
+                  <p className="leading-relaxed">{submissionError}</p>
+                </div>
+              </div>
+            )}
 
             {/* Sections List */}
             <div className="bg-white border border-[#E2EDF8] rounded-2xl divide-y divide-[#EAF2FC] overflow-hidden shadow-xs">
@@ -560,10 +678,11 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
                   <button
                     key={sec.id}
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
+                      await flushPendingDraft();
                       setCurrentSection(sec.id);
                       setView('section');
-                      updateDraft(answers, sec.id);
+                      queueDraftSave(answers, sec.id, { immediate: true, version: draftVersion });
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     className="w-full text-left min-h-[48px] p-4 sm:p-5 flex items-center justify-between hover:bg-[#F4F8FD] transition-colors cursor-pointer group"
@@ -593,30 +712,32 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
               })}
             </div>
 
-            <div className="flex items-center justify-between pt-3">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3">
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  await flushPendingDraft();
                   setCurrentSection(totalSections);
                   setView('section');
-                  updateDraft(answers, totalSections);
+                  queueDraftSave(answers, totalSections, { immediate: true, version: draftVersion });
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
-                className="min-h-[46px] px-6 py-2.5 bg-white border border-[#E2EDF8] text-[#062B50] hover:text-[#0866C6] hover:bg-[#F2F7FC] font-bold text-sm sm:text-base rounded-xl cursor-pointer transition-all shadow-xs inline-flex items-center gap-2"
+                className="w-full sm:w-auto min-h-[46px] px-6 py-2.5 bg-white border border-[#E2EDF8] text-[#062B50] hover:text-[#0866C6] hover:bg-[#F2F7FC] font-bold text-sm sm:text-base rounded-xl cursor-pointer transition-all shadow-xs inline-flex items-center justify-center gap-2"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Back to Section {totalSections}</span>
               </button>
+
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={isSubmitting}
-                className="min-h-[46px] px-8 py-2.5 bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-sm sm:text-base rounded-xl cursor-pointer transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] disabled:opacity-60 inline-flex items-center gap-2"
+                disabled={isSubmitting || isLockedSubmission}
+                className="w-full sm:w-auto min-h-[46px] px-8 py-2.5 bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-sm sm:text-base rounded-xl cursor-pointer transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] disabled:opacity-60 inline-flex items-center justify-center gap-2"
               >
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Submitting...</span>
+                    <span>Confirming with Server...</span>
                   </>
                 ) : (
                   <>
@@ -632,23 +753,27 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
     );
   }
 
-  // 4. Confirmation Screen
+  // 4. Confirmation Screen (Submitted & Locked)
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#F2F7FC]/80 via-white to-[#F4F8FD] text-[#102C46]">
       {renderHeader()}
 
       <main className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6">
         <div className="max-w-lg w-full bg-white border border-[#E2EDF8] p-8 sm:p-10 rounded-3xl text-center space-y-5 shadow-lg">
-          <div className="w-16 h-16 rounded-3xl bg-[#EBF4FE] border border-[#E2EDF8] flex items-center justify-center mx-auto text-[#0866C6] shadow-xs">
-            <CheckCircle2 className="w-8 h-8 text-[#0866C6]" />
+          <div className="w-16 h-16 rounded-3xl bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto text-emerald-600 shadow-xs">
+            <CheckCircle2 className="w-8 h-8 text-emerald-600" />
           </div>
 
           <div className="space-y-2">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+              <Lock className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Assessment Completed & Locked</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight pt-1">
               Your responses have been saved!
             </h1>
             <p className="text-sm sm:text-base text-[#5A6E85] leading-relaxed max-w-sm mx-auto">
-              Your student profile has been created with your personal details from About Me (Part 1).
+              Your self-reflection assessment is permanently recorded in your student profile.
             </p>
           </div>
 
@@ -656,7 +781,7 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
           {answers[1] || answers[3] || answers[4] ? (
             <div className="bg-[#F8FAFD] border border-[#E8F3FF] p-4 rounded-2xl text-left space-y-1.5 text-xs sm:text-sm">
               <div className="text-xs font-bold uppercase tracking-wider text-[#0866C6] mb-1">
-                Student Profile Created (From Part 1)
+                Student Profile Verified
               </div>
               <div className="text-[#062B50]">
                 <span className="text-[#64778C]">Name:</span> <strong>{answers[1] || 'Student'}</strong>
@@ -695,10 +820,11 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
             <button
               type="button"
               onClick={handleRetake}
-              className="w-full sm:w-auto min-h-[46px] px-6 py-3 bg-white border border-[#E2EDF8] text-[#062B50] hover:text-[#0866C6] hover:bg-[#F2F7FC] font-bold text-sm sm:text-base rounded-xl cursor-pointer transition-all inline-flex items-center justify-center gap-2"
+              className="w-full sm:w-auto min-h-[46px] px-6 py-3 bg-white border border-[#E2EDF8] text-[#5A6E85] hover:text-[#062B50] hover:bg-[#F2F7FC] font-semibold text-xs sm:text-sm rounded-xl cursor-pointer transition-all inline-flex items-center justify-center gap-1.5"
+              title="Reset local testing session (Cloud submissions remain immutable in production)"
             >
-              <RotateCcw className="w-4 h-4" />
-              <span>Retake Questionnaire</span>
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Demo Retake (Test Mode)</span>
             </button>
           </div>
         </div>

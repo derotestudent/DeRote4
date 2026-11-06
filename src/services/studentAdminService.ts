@@ -19,7 +19,7 @@ import {
   getAllSubmissionsFromBackend,
   updateStudentProfileInBackend,
 } from './firestoreBackend';
-import type { SubmissionData } from './api';
+import { type SubmissionData, getDraftStorageKey, getSubmissionStorageKey } from './api';
 
 export type QuestionnaireStatus = 'Not Started' | 'In Progress' | 'Submitted';
 
@@ -41,8 +41,6 @@ export interface AdminStudentRecord {
 
 const STORAGE_PREFIX_SUBMISSION = 'derote_questionnaire_submission_';
 const STORAGE_PREFIX_DRAFT = 'derote_questionnaire_draft_';
-const GLOBAL_SUBMISSION_KEY = 'derote_student_questionnaire_submission';
-const GLOBAL_DRAFT_KEY = 'derote_student_questionnaire_draft';
 
 
 
@@ -54,6 +52,7 @@ const GLOBAL_DRAFT_KEY = 'derote_student_questionnaire_draft';
 export function normalizeClassGrade(grade?: string): string {
   if (!grade) return 'Others';
   const clean = grade.trim();
+  if (clean.toLowerCase().includes('higher')) return 'Higher';
   if (clean.toLowerCase().includes('others')) return 'Others';
   const numMatch = clean.match(/\b(8|9|10|11|12)\b/);
   if (numMatch) return numMatch[1];
@@ -61,11 +60,12 @@ export function normalizeClassGrade(grade?: string): string {
 }
 
 /**
- * Formats class for user-facing display ('Class 8', 'Class 9', ... or 'Others')
+ * Formats class for user-facing display ('Class 8', 'Class 9', ... 'Higher', or 'Others')
  */
 export function formatClassDisplay(grade?: string): string {
   const norm = normalizeClassGrade(grade);
   if (norm === 'Others') return 'Others';
+  if (norm === 'Higher') return 'Higher / Other';
   if (norm.toLowerCase().startsWith('class')) return norm;
   return `Class ${norm}`;
 }
@@ -153,12 +153,13 @@ export async function fetchAllStudentsWithStatus(): Promise<AdminStudentRecord[]
       } catch {}
     }
 
-    // 3. If currently logged in student, check global storage keys
-    if (status === 'Not Started' && currentStudent?.id === acc.id) {
+    // 3. Check student-specific namespaced local storage keys
+    if (status === 'Not Started') {
       try {
-        const globalSub = localStorage.getItem(GLOBAL_SUBMISSION_KEY);
-        if (globalSub) {
-          const parsed = JSON.parse(globalSub);
+        const studentSubKey = getSubmissionStorageKey(acc.id);
+        const subRaw = localStorage.getItem(studentSubKey);
+        if (subRaw) {
+          const parsed = JSON.parse(subRaw);
           if (parsed.answers && Object.keys(parsed.answers).length > 0) {
             answers = parsed.answers;
             status = 'Submitted';
@@ -166,9 +167,10 @@ export async function fetchAllStudentsWithStatus(): Promise<AdminStudentRecord[]
             updatedAt = parsed.submittedAt;
           }
         } else {
-          const globalDraft = localStorage.getItem(GLOBAL_DRAFT_KEY);
-          if (globalDraft) {
-            const parsed = JSON.parse(globalDraft);
+          const studentDraftKey = getDraftStorageKey(acc.id);
+          const draftRaw = localStorage.getItem(studentDraftKey);
+          if (draftRaw) {
+            const parsed = JSON.parse(draftRaw);
             if (parsed.answers && Object.keys(parsed.answers).length > 0) {
               answers = parsed.answers;
               status = 'In Progress';
@@ -316,10 +318,8 @@ export async function updateStudentProfileByAdmin(
 
   updateAnswersForStorageKey(`${STORAGE_PREFIX_SUBMISSION}${studentId}`);
   updateAnswersForStorageKey(`${STORAGE_PREFIX_DRAFT}${studentId}`);
-  if (current?.id === studentId) {
-    updateAnswersForStorageKey(GLOBAL_SUBMISSION_KEY);
-    updateAnswersForStorageKey(GLOBAL_DRAFT_KEY);
-  }
+  updateAnswersForStorageKey(getSubmissionStorageKey(studentId));
+  updateAnswersForStorageKey(getDraftStorageKey(studentId));
 
   const allUpdated = await fetchAllStudentsWithStatus();
   const updatedRecord = allUpdated.find((r) => r.id === studentId);

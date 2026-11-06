@@ -154,26 +154,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
   // Load and sync student status
   useEffect(() => {
     const unsub = onLocalAuthChange((curr) => {
-      if (curr) {
-        setStudent(curr);
-      } else {
-        // Fallback: check if student filled About Me Part 1 in draft/submission
-        try {
-          const subRaw = localStorage.getItem('derote_student_questionnaire_submission');
-          const draftRaw = localStorage.getItem('derote_student_questionnaire_draft');
-          const raw = subRaw || draftRaw;
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            const ans = parsed?.answers;
-            if (ans && (ans[1] || ans[2] || ans[3] || ans[4])) {
-              const created = syncStudentProfileFromPart1(ans);
-              setStudent(created);
-              return;
-            }
-          }
-        } catch {}
-        setStudent(null);
-      }
+      setStudent(curr);
     });
     return () => unsub();
   }, []);
@@ -194,7 +175,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
         gatheredAnswers = { ...draft.answers };
       }
 
-      if (submitted || (currentAcc && (currentAcc.completedReflections ?? 0) > 0)) {
+      if (submitted) {
         setIsCompleted(true);
         setSubmissionData(sub);
         if (sub?.answers) {

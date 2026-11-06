@@ -18,6 +18,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { LocalStudentAccount } from './firebaseAuth';
@@ -242,6 +243,42 @@ export async function updateStudentProfileInBackend(
   }
 }
 
+/**
+ * Updates editable fields (age and classGrade) of a student profile in Firestore, returning outcome.
+ * Touches strictly age, classGrade, and updatedAt to satisfy affectedKeys().hasOnly() rules.
+ */
+export async function updateStudentProfileOutcome(
+  studentId: string,
+  updates: { age: string; classGrade: string }
+): Promise<ProfileSaveOutcome> {
+  if (!studentId) {
+    return { success: false, code: 'invalid-id', message: 'Invalid student ID.' };
+  }
+  try {
+    const studentRef = doc(db, COLLECTION_STUDENTS, studentId);
+    const updatedAt = new Date().toISOString();
+    await updateDoc(studentRef, {
+      age: updates.age.trim(),
+      classGrade: updates.classGrade.trim(),
+      updatedAt,
+    });
+    return {
+      success: true,
+      profile: {
+        id: studentId,
+        age: updates.age.trim(),
+        classGrade: updates.classGrade.trim(),
+        updatedAt,
+      } as unknown as LocalStudentAccount,
+    };
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code || 'unknown-error';
+    const message = (err as { message?: string })?.message || String(err);
+    console.error(`[Firestore Backend] Profile update failed for ${studentId} (${code}):`, message);
+    return { success: false, code, message };
+  }
+}
+
 /* =========================================================================
    2. QUESTIONNAIRE ANSWERS & DRAFTS BACKEND
    ========================================================================= */
@@ -271,27 +308,70 @@ function deserializeAnswers(raw: Record<string, unknown>): StudentAnswers {
   return deserialized;
 }
 
+export type SaveDraftOutcome =
+  | { success: true; updatedAt: string }
+  | { success: false; code: string; message: string };
+
+export type SaveSubmissionOutcome =
+  | { success: true; submittedAt: string }
+  | { success: false; code: string; message: string };
+
 /**
- * Saves a questionnaire draft for a student to Firestore.
+ * Saves a questionnaire draft for a student to Firestore with detailed outcome.
  */
-export async function saveDraftToBackend(
+export async function saveDraftToBackendOutcome(
   studentId: string,
   answers: StudentAnswers,
-  currentSection: number
-): Promise<boolean> {
+  currentSection: number,
+  version: number = QUESTIONNAIRE_VERSION
+): Promise<SaveDraftOutcome> {
+  if (!studentId) {
+    return { success: false, code: 'unauthenticated', message: 'No student ID provided for draft save.' };
+  }
   try {
     const draftRef = doc(db, COLLECTION_DRAFTS, studentId);
+    const updatedAt = new Date().toISOString();
     const payload = {
       studentId,
       answers: serializeAnswers(answers),
       currentSection,
-      version: QUESTIONNAIRE_VERSION,
-      updatedAt: new Date().toISOString(),
+      version,
+      updatedAt,
     };
-    await setDoc(draftRef, payload, { merge: true });
+    await setDoc(draftRef, payload);
+    return { success: true, updatedAt };
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code || 'unknown-error';
+    const message = (err as { message?: string })?.message || String(err);
+    console.error(`[Firestore Backend] Draft save failed for ${studentId} (${code}):`, message);
+    return { success: false, code, message };
+  }
+}
+
+/**
+ * Saves a questionnaire draft for a student to Firestore (boolean wrapper).
+ */
+export async function saveDraftToBackend(
+  studentId: string,
+  answers: StudentAnswers,
+  currentSection: number,
+  version: number = QUESTIONNAIRE_VERSION
+): Promise<boolean> {
+  const result = await saveDraftToBackendOutcome(studentId, answers, currentSection, version);
+  return result.success;
+}
+
+/**
+ * Deletes a questionnaire draft for a student from Firestore (e.g. after final submission).
+ */
+export async function deleteDraftFromBackend(studentId: string): Promise<boolean> {
+  if (!studentId) return false;
+  try {
+    const draftRef = doc(db, COLLECTION_DRAFTS, studentId);
+    await deleteDoc(draftRef);
     return true;
   } catch (err) {
-    console.warn('[Firestore Backend] Could not save draft to cloud:', err);
+    console.warn('[Firestore Backend] Could not delete cloud draft:', err);
     return false;
   }
 }
@@ -301,7 +381,8 @@ export async function saveDraftToBackend(
  */
 export async function loadDraftFromBackend(
   studentId: string
-): Promise<{ answers: StudentAnswers; currentSection: number } | null> {
+): Promise<{ answers: StudentAnswers; currentSection: number; version: number; updatedAt?: string } | null> {
+  if (!studentId) return null;
   try {
     const draftRef = doc(db, COLLECTION_DRAFTS, studentId);
     const snap = await getDoc(draftRef);
@@ -310,6 +391,8 @@ export async function loadDraftFromBackend(
     return {
       answers: deserializeAnswers(data.answers || {}),
       currentSection: typeof data.currentSection === 'number' ? data.currentSection : 1,
+      version: typeof data.version === 'number' ? data.version : QUESTIONNAIRE_VERSION,
+      updatedAt: data.updatedAt,
     };
   } catch (err) {
     console.warn('[Firestore Backend] Could not load draft from cloud:', err);
@@ -318,37 +401,45 @@ export async function loadDraftFromBackend(
 }
 
 /**
- * Submits finalized questionnaire answers for a student to Firestore.
+ * Submits finalized questionnaire answers for a student to Firestore with detailed outcome.
+ * Uses create-only write semantics to conform with immutable security rules.
+ */
+export async function saveSubmissionToBackendOutcome(
+  studentId: string,
+  submission: SubmissionData
+): Promise<SaveSubmissionOutcome> {
+  if (!studentId) {
+    return { success: false, code: 'unauthenticated', message: 'No student ID provided for final submission.' };
+  }
+  try {
+    const submissionRef = doc(db, COLLECTION_SUBMISSIONS, studentId);
+    const now = new Date().toISOString();
+    const payload = {
+      studentId,
+      answers: serializeAnswers(submission.answers),
+      version: submission.version || QUESTIONNAIRE_VERSION,
+      submittedAt: submission.submittedAt || now,
+      updatedAt: now,
+    };
+    await setDoc(submissionRef, payload);
+    return { success: true, submittedAt: payload.submittedAt };
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code || 'unknown-error';
+    const message = (err as { message?: string })?.message || String(err);
+    console.error(`[Firestore Backend] Submission failed for ${studentId} (${code}):`, message);
+    return { success: false, code, message };
+  }
+}
+
+/**
+ * Backward-compatible helper: submits finalized questionnaire answers for a student to Firestore.
  */
 export async function saveSubmissionToBackend(
   studentId: string,
   submission: SubmissionData
 ): Promise<boolean> {
-  try {
-    const submissionRef = doc(db, COLLECTION_SUBMISSIONS, studentId);
-    const payload = {
-      studentId,
-      answers: serializeAnswers(submission.answers),
-      version: submission.version,
-      submittedAt: submission.submittedAt,
-      updatedAt: new Date().toISOString(),
-    };
-    await setDoc(submissionRef, payload);
-
-    // Also mark student account's completed reflections in backend
-    const studentRef = doc(db, COLLECTION_STUDENTS, studentId);
-    await updateDoc(studentRef, {
-      completedReflections: 1,
-      lastSubmittedAt: submission.submittedAt,
-    }).catch(() => {
-      /* ignore if student doc not yet indexed */
-    });
-
-    return true;
-  } catch (err) {
-    console.warn('[Firestore Backend] Could not save submission to cloud:', err);
-    return false;
-  }
+  const result = await saveSubmissionToBackendOutcome(studentId, submission);
+  return result.success;
 }
 
 /**
@@ -482,8 +573,8 @@ export async function testFirestoreConnection(): Promise<{
   error?: string;
 }> {
   try {
-    const testDocRef = doc(db, '_connection_test', 'ping');
-    await setDoc(testDocRef, { timestamp: new Date().toISOString() });
+    const qDocRef = doc(db, COLLECTION_QUESTIONNAIRES, DEFAULT_QUESTIONNAIRE_DOC_ID);
+    await getDoc(qDocRef);
     return { connected: true, projectId: db.app.options.projectId || 'gen-lang-client-0276070718' };
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);

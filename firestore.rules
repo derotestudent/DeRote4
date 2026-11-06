@@ -2,37 +2,251 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Student Profiles collection
-    // Stores personal details, class/grade, institution, and reflection completion counts
+
+    // =========================================================================
+    // GLOBAL REUSABLE FUNCTIONS & CONSTANTS
+    // =========================================================================
+
+    // Designated administrator UID (Sole authorized administrator in the system)
+    function adminUid() {
+      return 'VIwgfF6Q2FTDPDQwkRECSjpwbc32';
+    }
+
+    // User is authenticated via Firebase Authentication
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    // User is the single designated administrator
+    function isAdmin() {
+      return isSignedIn() && request.auth.uid == adminUid();
+    }
+
+    // User is the authenticated owner of the studentId resource
+    function isOwner(studentId) {
+      return isSignedIn() && request.auth.uid == studentId;
+    }
+
+    // Document ID format safety check (bounded alphanumeric/UID string)
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    // Validate student age strictly between 8 and 25 years in string representation
+    function isValidAge(age) {
+      return age is string && age in [
+        '8', '9', '10', '11', '12', '13', '14', '15',
+        '16', '17', '18', '19', '20', '21', '22', '23', '24', '25'
+      ];
+    }
+
+    // Canonical class/grade categories for all new student registrations
+    function isValidNewClassGrade(grade) {
+      return grade is string && grade in ['8', '9', '10', '11', '12', 'Higher'];
+    }
+
+    // Supported legacy + canonical class/grade categories (for backward compatibility with existing records)
+    function isValidClassGrade(grade) {
+      return grade is string && grade in ['8', '9', '10', '11', '12', 'Higher', 'Others'];
+    }
+
+    // Valid question keys across the 64 questionnaire questions
+    function validQuestionKeys() {
+      return [
+        '1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
+        '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
+        '21', '22', '23', '24', '25', '26', '27', '28', '29', '30',
+        '31', '32', '33', '34', '35', '36', '37', '38', '39', '40',
+        '41', '42', '43', '44', '45', '46', '47', '48', '49', '50',
+        '51', '52', '53', '54', '55', '56', '57', '58', '59', '60',
+        '61', '62', '63', '64'
+      ];
+    }
+
+    // Validate answers map: must be a map, at most 64 keys, containing only valid question IDs (1..64)
+    function isValidAnswersMap(answers) {
+      return answers is map
+        && answers.size() <= 64
+        && answers.keys().hasOnly(validQuestionKeys());
+    }
+
+    // Validate student profile data during initial creation
+    // - Enforces token email ownership: request.resource.data.email == request.auth.token.email
+    // - Enforces canonical class grades (8-12, Higher) for new registrations
+    // - Restricts server-managed fields: completedReflections must be 0, totalReflections must be 13, lastSubmittedAt forbidden
+    // - Uses keys().hasOnly() to prevent injection of arbitrary fields
+    function isValidStudentInitial(data, studentId) {
+      return data.keys().hasAll(['id', 'fullName', 'email', 'age', 'classGrade', 'schoolName'])
+        && data.keys().hasOnly([
+          'id', 'fullName', 'email', 'age', 'classGrade', 'schoolName',
+          'phone', 'completedReflections', 'totalReflections', 'badge',
+          'createdAt', 'lastLoginAt', 'updatedAt'
+        ])
+        && data.id == studentId
+        && data.id == request.auth.uid
+        && data.fullName is string && data.fullName.size() > 0 && data.fullName.size() <= 128
+        && data.email is string && data.email.size() > 0 && data.email.size() <= 128
+        && request.auth.token.email != null
+        && data.email.lower() == request.auth.token.email.lower()
+        && isValidAge(data.age)
+        && isValidNewClassGrade(data.classGrade)
+        && data.schoolName is string && data.schoolName.size() > 0 && data.schoolName.size() <= 200
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 32))
+        && (!('completedReflections' in data) || (data.completedReflections is int && data.completedReflections == 0))
+        && (!('totalReflections' in data) || (data.totalReflections is int && data.totalReflections == 13))
+        && (!('badge' in data) || (data.badge is string && data.badge.size() <= 64))
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64))
+        && (!('lastLoginAt' in data) || (data.lastLoginAt is string && data.lastLoginAt.size() <= 64))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64))
+        && !('lastSubmittedAt' in data);
+    }
+
+    // Strict student self-updates using MapDiff affectedKeys().hasOnly()
+    // Students may change ONLY: age, classGrade, and updatedAt.
+    // All other fields remain strictly immutable; arbitrary fields are forbidden.
+    // Preserves existing legacy Others records if untouched, but any new grade must be canonical.
+    function isValidStudentOwnerUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['age', 'classGrade', 'updatedAt'])
+        && isValidAge(request.resource.data.age)
+        && (isValidNewClassGrade(request.resource.data.classGrade) || (request.resource.data.classGrade == resource.data.classGrade && isValidClassGrade(request.resource.data.classGrade)))
+        && (!('updatedAt' in request.resource.data) || (request.resource.data.updatedAt is string && request.resource.data.updatedAt.size() <= 64));
+    }
+
+    // Validate student profile updates made by the designated administrator
+    function isValidStudentAdminUpdate(incoming, existing, studentId) {
+      return incoming.keys().hasOnly([
+          'id', 'fullName', 'email', 'age', 'classGrade', 'schoolName',
+          'phone', 'completedReflections', 'totalReflections', 'badge',
+          'createdAt', 'lastLoginAt', 'updatedAt', 'lastSubmittedAt'
+        ])
+        && incoming.id == existing.id
+        && incoming.id == studentId
+        && incoming.fullName is string && incoming.fullName.size() > 0 && incoming.fullName.size() <= 128
+        && incoming.schoolName is string && incoming.schoolName.size() > 0 && incoming.schoolName.size() <= 200
+        && isValidAge(incoming.age)
+        && isValidClassGrade(incoming.classGrade);
+    }
+
+    // Validate draft payload with strict keys().hasAll() and keys().hasOnly()
+    // Section indexing: 0 = Intro, 1-13 = Sections, 14 = Review
+    function isValidDraft(data, studentId) {
+      return data.keys().hasAll(['studentId', 'answers', 'currentSection'])
+        && data.keys().hasOnly(['studentId', 'answers', 'currentSection', 'version', 'updatedAt'])
+        && data.studentId == studentId
+        && data.studentId == request.auth.uid
+        && isValidAnswersMap(data.answers)
+        && data.currentSection is int
+        && data.currentSection >= 0 && data.currentSection <= 14
+        && (!('version' in data) || data.version is int)
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    // Validate submission payload with strict keys().hasAll() and keys().hasOnly()
+    function isValidSubmission(data, studentId) {
+      return data.keys().hasAll(['studentId', 'answers', 'version', 'submittedAt'])
+        && data.keys().hasOnly(['studentId', 'answers', 'version', 'submittedAt', 'updatedAt'])
+        && data.studentId == studentId
+        && data.studentId == request.auth.uid
+        && isValidAnswersMap(data.answers)
+        && data.version is int
+        && data.submittedAt is string && data.submittedAt.size() <= 64
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    // =========================================================================
+    // 1. STUDENTS COLLECTION: students/{studentId}
+    // =========================================================================
     match /students/{studentId} {
-      allow read: if true;
-      allow create, update: if true;
+      // Individual student can read their own profile; Admin can read any student
+      allow get: if isValidId(studentId) && (isOwner(studentId) || isAdmin());
+
+      // Only designated Admin can list all students for the Admin Dashboard
+      allow list: if isAdmin();
+
+      // Student creates their own initial profile
+      allow create: if isValidId(studentId)
+        && isOwner(studentId)
+        && isValidStudentInitial(request.resource.data, studentId);
+
+      // Student updates permitted fields (age, classGrade, updatedAt via affectedKeys) OR Admin updates profile fields
+      allow update: if isValidId(studentId) && (
+        (isOwner(studentId) && isValidStudentOwnerUpdate()) ||
+        (isAdmin() && isValidStudentAdminUpdate(request.resource.data, resource.data, studentId))
+      );
+
+      // Deletion is strictly forbidden for all users
       allow delete: if false;
     }
 
-    // 2. Final Questionnaire Submissions collection
-    // Stores submitted answers for individual students
-    match /submissions/{studentId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    // 3. In-progress Questionnaire Drafts collection
-    // Stores auto-saved drafts and current section index
+    // =========================================================================
+    // 2. DRAFTS COLLECTION: drafts/{studentId}
+    // =========================================================================
     match /drafts/{studentId} {
-      allow read, write: if true;
+      // Student reads their own draft; Admin can read all drafts
+      allow get: if isValidId(studentId) && (isOwner(studentId) || isAdmin());
+
+      // Only designated Admin can list all drafts
+      allow list: if isAdmin();
+
+      // Student creates their own draft ONLY if no final submission exists yet
+      allow create: if isValidId(studentId)
+        && isOwner(studentId)
+        && !exists(/databases/$(database)/documents/submissions/$(studentId))
+        && isValidDraft(request.resource.data, studentId);
+
+      // Student updates their own draft ONLY if no final submission exists yet
+      allow update: if isValidId(studentId)
+        && isOwner(studentId)
+        && !exists(/databases/$(database)/documents/submissions/$(studentId))
+        && isValidDraft(request.resource.data, studentId);
+
+      // Student can delete their own draft; Admin can delete if needed; Never other students
+      allow delete: if isValidId(studentId) && (isOwner(studentId) || isAdmin());
     }
 
-    // 4. Questionnaire Bank & Definitions collection
-    // Stores sections, questions, and instructions in the cloud
+    // =========================================================================
+    // 3. SUBMISSIONS COLLECTION: submissions/{studentId}
+    // =========================================================================
+    match /submissions/{studentId} {
+      // Student reads their own submission; Admin can read all submissions
+      allow get: if isValidId(studentId) && (isOwner(studentId) || isAdmin());
+
+      // Only designated Admin can list / query all submissions
+      allow list: if isAdmin();
+
+      // Student submits final answers EXACTLY ONCE
+      // Enforced by document existence check and create-only rule
+      allow create: if isValidId(studentId)
+        && isOwner(studentId)
+        && !exists(/databases/$(database)/documents/submissions/$(studentId))
+        && isValidSubmission(request.resource.data, studentId);
+
+      // Final submissions are strictly immutable: no updates permitted by anyone (including Admin)
+      allow update: if false;
+
+      // Final submissions cannot be deleted by anyone (including Admin)
+      allow delete: if false;
+    }
+
+    // =========================================================================
+    // 4. QUESTIONNAIRES COLLECTION: questionnaires/{documentId}
+    // =========================================================================
     match /questionnaires/{documentId} {
-      allow read: if true;
-      allow write: if true;
+      // Authenticated students can ONLY read the published questionnaire (default_v1); Admin can read any
+      allow get: if (isSignedIn() && documentId == 'default_v1') || isAdmin();
+
+      // Only designated Admin can list questionnaires (students cannot list / enumerate unpublished definitions)
+      allow list: if isAdmin();
+
+      // Only designated Admin can create, modify, or delete questionnaire definitions
+      allow create, update, delete: if isAdmin();
     }
 
-    // Connection testing
-    match /_connection_test/{docId} {
-      allow read, write: if true;
+    // =========================================================================
+    // 5. DEFAULT DENY FOR ALL OTHER PATHS (Diagnostic, Undocumented, etc.)
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
