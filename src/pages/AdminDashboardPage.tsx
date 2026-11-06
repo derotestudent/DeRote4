@@ -26,6 +26,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Printer,
+  ChevronDown,
 } from 'lucide-react';
 import {
   seedQuestionnaireToBackend,
@@ -123,6 +124,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
   const [isSyncingQuestionnaire, setIsSyncingQuestionnaire] = useState<boolean>(false);
   const [isTestingPing, setIsTestingPing] = useState<boolean>(false);
   const [backendPingResult, setBackendPingResult] = useState<string | null>(null);
+  const [isBackendSettingsOpen, setIsBackendSettingsOpen] = useState<boolean>(false);
 
   const handleSyncQuestionnaire = async () => {
     setIsSyncingQuestionnaire(true);
@@ -188,6 +190,24 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
     return () => unsub();
   }, [onNavigate]);
 
+  // Helper to resolve effective status for a student record
+  const getStudentEffectiveStatus = (s: AdminStudentRecord): QuestionnaireStatus | 'Unable to Load' => {
+    if (statusErrors[s.id]) return 'Unable to Load';
+    return statusCache[s.id]?.status || s.status;
+  };
+
+  // Interactive summary card filter click handler
+  const handleCardFilterClick = (targetStatus: 'all' | 'Submitted' | 'In Progress' | 'Not Started') => {
+    if (targetStatus === 'all') {
+      setStatusFilter('all');
+    } else if (statusFilter === targetStatus) {
+      // Clicking the currently selected card again restores the complete student list
+      setStatusFilter('all');
+    } else {
+      setStatusFilter(targetStatus);
+    }
+  };
+
   // Load student records
   const loadData = async () => {
     setIsLoading(true);
@@ -195,6 +215,35 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
     try {
       const records = await fetchAllStudentsWithStatus();
       setStudents(records);
+
+      // Immediately resolve status for all students from Firebase
+      const allIds = records.map((s) => s.id);
+      if (allIds.length > 0) {
+        resolveStudentBatchStatus(allIds)
+          .then((batch) => {
+            setStatusCache((prev) => {
+              const next = { ...prev };
+              for (const [id, res] of Object.entries(batch)) {
+                if (res.status === 'Submitted' || res.status === 'In Progress' || res.status === 'Not Started') {
+                  next[id] = res;
+                }
+              }
+              return next;
+            });
+            const errors: Record<string, string> = {};
+            for (const [id, res] of Object.entries(batch)) {
+              if (res.status === 'Unable to Load' && res.error) {
+                errors[id] = res.error;
+              }
+            }
+            if (Object.keys(errors).length > 0) {
+              setStatusErrors((prev) => ({ ...prev, ...errors }));
+            }
+          })
+          .catch((err) => {
+            console.warn('[AdminDashboard] Status batch lookup warning:', err);
+          });
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to retrieve records from Firestore.';
       setLoadError(msg);
@@ -208,11 +257,20 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
     loadData();
   }, []);
 
-  // Top metric counts from all available student records
+  // Top metric counts dynamically calculated from live records and statusCache
   const totalRegistered = students.length;
-  const totalSubmitted = students.filter((s) => (statusErrors[s.id] ? false : (statusCache[s.id]?.status || s.status) === 'Submitted')).length;
-  const totalInProgress = students.filter((s) => (statusErrors[s.id] ? false : (statusCache[s.id]?.status || s.status) === 'In Progress')).length;
-  const totalNotStarted = students.filter((s) => (statusErrors[s.id] ? false : (statusCache[s.id]?.status || s.status) === 'Not Started')).length;
+  const totalSubmitted = useMemo(
+    () => students.filter((s) => getStudentEffectiveStatus(s) === 'Submitted').length,
+    [students, statusCache, statusErrors]
+  );
+  const totalInProgress = useMemo(
+    () => students.filter((s) => getStudentEffectiveStatus(s) === 'In Progress').length,
+    [students, statusCache, statusErrors]
+  );
+  const totalNotStarted = useMemo(
+    () => students.filter((s) => getStudentEffectiveStatus(s) === 'Not Started').length,
+    [students, statusCache, statusErrors]
+  );
   const totalUnableToLoad = Object.keys(statusErrors).length;
 
   // Unique institutions list for the institution filter
@@ -253,11 +311,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
           }
         }
 
-        // Status filter
+        // Status filter (dynamically matches card metric count)
         if (statusFilter !== 'all') {
-          const currentStatus = statusErrors[student.id]
-            ? 'Unable to Load'
-            : statusCache[student.id]?.status || student.status;
+          const currentStatus = getStudentEffectiveStatus(student);
           if (currentStatus !== statusFilter) {
             return false;
           }
@@ -1111,130 +1167,276 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                 </div>
               </div>
 
-              {/* Top Metric Cards */}
+              {/* Interactive Top Metric Cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E8F3FF] shadow-xs">
+                {/* 1. Total Students Card */}
+                <button
+                  type="button"
+                  onClick={() => handleCardFilterClick('all')}
+                  className={`rounded-3xl p-5 sm:p-6 text-left transition-all cursor-pointer relative group ${
+                    statusFilter === 'all'
+                      ? 'bg-blue-50/70 border-2 border-[#0866C6] shadow-sm ring-2 ring-[#0866C6]/20'
+                      : 'bg-white border border-[#E8F3FF] hover:border-[#0866C6]/40 hover:bg-[#F8FAFD] shadow-xs'
+                  }`}
+                  aria-pressed={statusFilter === 'all'}
+                  title="Click to view all registered students"
+                >
                   <div className="flex items-center justify-between text-xs font-semibold text-[#64778C] mb-2">
-                    <span>Total Students</span>
-                    <Users className="w-4 h-4 text-[#0866C6]" />
+                    <span className="flex items-center gap-1.5 font-bold">
+                      Total Students
+                      {statusFilter === 'all' && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#0866C6] text-white">
+                          Active
+                        </span>
+                      )}
+                    </span>
+                    <div
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
+                        statusFilter === 'all' ? 'bg-[#0866C6] text-white' : 'bg-[#E8F3FF] text-[#0866C6]'
+                      }`}
+                    >
+                      <Users className="w-4 h-4" />
+                    </div>
                   </div>
                   <div className="text-2xl sm:text-3xl font-extrabold text-[#062B50]">
                     {totalRegistered}
                   </div>
-                  <div className="text-[11px] text-[#64778C] mt-1">
-                    Registered in database
+                  <div className="flex items-center justify-between text-[11px] text-[#64778C] mt-1.5">
+                    <span>Registered in database</span>
+                    <span className="text-[10px] font-semibold text-[#0866C6] opacity-0 group-hover:opacity-100 transition-opacity">
+                      {statusFilter === 'all' ? 'Showing all' : 'Show all'}
+                    </span>
                   </div>
-                </div>
+                </button>
 
-                <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E8F3FF] shadow-xs">
-                  <div className="flex items-center justify-between text-xs font-semibold text-emerald-700 mb-2">
-                    <span>Submitted</span>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                {/* 2. Submitted Card */}
+                <button
+                  type="button"
+                  onClick={() => handleCardFilterClick('Submitted')}
+                  className={`rounded-3xl p-5 sm:p-6 text-left transition-all cursor-pointer relative group ${
+                    statusFilter === 'Submitted'
+                      ? 'bg-emerald-50/70 border-2 border-emerald-600 shadow-sm ring-2 ring-emerald-500/20'
+                      : 'bg-white border border-[#E8F3FF] hover:border-emerald-500/40 hover:bg-[#F6FBF8] shadow-xs'
+                  }`}
+                  aria-pressed={statusFilter === 'Submitted'}
+                  title={statusFilter === 'Submitted' ? 'Click to show all students' : 'Click to filter by submitted students'}
+                >
+                  <div className="flex items-center justify-between text-xs font-semibold text-emerald-800 mb-2">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      Submitted
+                      {statusFilter === 'Submitted' && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white">
+                          Active Filter
+                        </span>
+                      )}
+                    </span>
+                    <div
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
+                        statusFilter === 'Submitted' ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                    </div>
                   </div>
                   <div className="text-2xl sm:text-3xl font-extrabold text-[#062B50]">
                     {totalSubmitted}
                   </div>
-                  <div className="text-[11px] text-emerald-700 font-medium mt-1">
-                    Completed reflections
+                  <div className="flex items-center justify-between text-[11px] text-emerald-700 font-medium mt-1.5">
+                    <span>Completed reflections</span>
+                    <span className="text-[10px] font-semibold text-emerald-700 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {statusFilter === 'Submitted' ? 'Click to clear' : 'Filter roster'}
+                    </span>
                   </div>
-                </div>
+                </button>
 
-                <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E8F3FF] shadow-xs">
-                  <div className="flex items-center justify-between text-xs font-semibold text-amber-700 mb-2">
-                    <span>In Progress</span>
-                    <Clock className="w-4 h-4 text-amber-600" />
+                {/* 3. In Progress Card */}
+                <button
+                  type="button"
+                  onClick={() => handleCardFilterClick('In Progress')}
+                  className={`rounded-3xl p-5 sm:p-6 text-left transition-all cursor-pointer relative group ${
+                    statusFilter === 'In Progress'
+                      ? 'bg-amber-50/70 border-2 border-amber-600 shadow-sm ring-2 ring-amber-500/20'
+                      : 'bg-white border border-[#E8F3FF] hover:border-amber-500/40 hover:bg-[#FDFBF7] shadow-xs'
+                  }`}
+                  aria-pressed={statusFilter === 'In Progress'}
+                  title={statusFilter === 'In Progress' ? 'Click to show all students' : 'Click to filter by in-progress students'}
+                >
+                  <div className="flex items-center justify-between text-xs font-semibold text-amber-800 mb-2">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      In Progress
+                      {statusFilter === 'In Progress' && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-600 text-white">
+                          Active Filter
+                        </span>
+                      )}
+                    </span>
+                    <div
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
+                        statusFilter === 'In Progress' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-700'
+                      }`}
+                    >
+                      <Clock className="w-4 h-4" />
+                    </div>
                   </div>
                   <div className="text-2xl sm:text-3xl font-extrabold text-[#062B50]">
                     {totalInProgress}
                   </div>
-                  <div className="text-[11px] text-amber-700 font-medium mt-1">
-                    Saved partial responses
+                  <div className="flex items-center justify-between text-[11px] text-amber-800 font-medium mt-1.5">
+                    <span>Saved partial responses</span>
+                    <span className="text-[10px] font-semibold text-amber-700 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {statusFilter === 'In Progress' ? 'Click to clear' : 'Filter roster'}
+                    </span>
                   </div>
-                </div>
+                </button>
 
-                <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E8F3FF] shadow-xs">
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-600 mb-2">
-                    <span>Not Started</span>
-                    <AlertCircle className="w-4 h-4 text-slate-400" />
+                {/* 4. Not Started Card */}
+                <button
+                  type="button"
+                  onClick={() => handleCardFilterClick('Not Started')}
+                  className={`rounded-3xl p-5 sm:p-6 text-left transition-all cursor-pointer relative group ${
+                    statusFilter === 'Not Started'
+                      ? 'bg-slate-100/90 border-2 border-slate-600 shadow-sm ring-2 ring-slate-500/20'
+                      : 'bg-white border border-[#E8F3FF] hover:border-slate-400 hover:bg-[#F8FAFD] shadow-xs'
+                  }`}
+                  aria-pressed={statusFilter === 'Not Started'}
+                  title={statusFilter === 'Not Started' ? 'Click to show all students' : 'Click to filter by not-started students'}
+                >
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-2">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      Not Started
+                      {statusFilter === 'Not Started' && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-700 text-white">
+                          Active Filter
+                        </span>
+                      )}
+                    </span>
+                    <div
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
+                        statusFilter === 'Not Started' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      <AlertCircle className="w-4 h-4" />
+                    </div>
                   </div>
                   <div className="text-2xl sm:text-3xl font-extrabold text-[#062B50]">
                     {totalNotStarted}
                   </div>
-                  <div className="text-[11px] text-slate-500 font-medium mt-1">
-                    Awaiting questionnaire
+                  <div className="flex items-center justify-between text-[11px] text-slate-600 font-medium mt-1.5">
+                    <span>Awaiting questionnaire</span>
+                    <span className="text-[10px] font-semibold text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {statusFilter === 'Not Started' ? 'Click to clear' : 'Filter roster'}
+                    </span>
                   </div>
-                </div>
+                </button>
               </div>
 
-              {/* Firebase Cloud Backend & Questionnaire Status Card */}
-              <div className="bg-gradient-to-r from-[#062B50] via-[#083D6F] to-[#0A4D8C] text-white rounded-3xl p-5 sm:p-6 shadow-md border border-[#144A7E] flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-bold">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span>Firebase Backend Active</span>
-                    </span>
-                    <span className="text-xs text-blue-200 font-mono">
-                      Project: gen-lang-client-0276070718
-                    </span>
+              {/* Compact, Collapsible Backend & System Settings Section */}
+              <div className="bg-white rounded-2xl border border-[#D5E4F3] p-4 text-[#102C46] transition-all">
+                {/* Summary / Header Row (Always Visible) */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="w-8 h-8 rounded-xl bg-[#E8F3FF] text-[#0866C6] flex items-center justify-center shrink-0">
+                      <Database className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs sm:text-sm font-bold text-[#062B50]">
+                          Backend &amp; System Settings
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-semibold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>Firebase Backend Active</span>
+                        </span>
+                        <span className="text-[11px] text-[#64778C] font-mono hidden md:inline">
+                          Project: gen-lang-client-0276070718
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#64778C] mt-0.5">
+                        Firestore database syncing student profiles, drafts, submissions, and questionnaires
+                      </p>
+                    </div>
                   </div>
 
-                  <h3 className="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2">
-                    <Database className="w-5 h-5 text-blue-300 shrink-0" />
-                    <span>Cloud Firestore Backend &amp; Questionnaire Storage</span>
-                  </h3>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={loadData}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#D5E4F3] bg-white hover:bg-[#F2F7FC] text-[#062B50] font-semibold text-xs transition-colors cursor-pointer"
+                      title="Reload all student records and live statuses from Firestore"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-[#0866C6]" />
+                      <span>Refresh Data</span>
+                    </button>
 
-                  <p className="text-xs sm:text-sm text-blue-100/80 max-w-2xl leading-relaxed">
-                    Student profiles (<code className="bg-white/10 px-1 py-0.5 rounded text-blue-200 font-mono text-xs">students</code>), answers &amp; drafts (<code className="bg-white/10 px-1 py-0.5 rounded text-blue-200 font-mono text-xs">submissions</code>, <code className="bg-white/10 px-1 py-0.5 rounded text-blue-200 font-mono text-xs">drafts</code>), and the dynamic questionnaire (<code className="bg-white/10 px-1 py-0.5 rounded text-blue-200 font-mono text-xs">questionnaires</code>) are integrated directly with your cloud database.
-                  </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsBackendSettingsOpen((prev) => !prev)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#D5E4F3] bg-[#F8FAFD] hover:bg-[#F2F7FC] text-[#062B50] font-semibold text-xs transition-colors cursor-pointer"
+                      aria-expanded={isBackendSettingsOpen}
+                    >
+                      <span>{isBackendSettingsOpen ? 'Hide Controls' : 'Technical Controls'}</span>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 text-[#64778C] transition-transform duration-200 ${
+                          isBackendSettingsOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2.5 flex-wrap shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleSyncQuestionnaire}
-                    disabled={isSyncingQuestionnaire}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-[#062B50] hover:bg-blue-50 font-bold text-xs sm:text-sm transition-all shadow-sm cursor-pointer disabled:opacity-60"
-                    title="Upload or update all 64 questions & 13 sections in Firestore backend"
-                  >
-                    {isSyncingQuestionnaire ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin text-[#0866C6]" />
-                        <span>Syncing to Cloud...</span>
-                      </>
-                    ) : (
-                      <>
-                        <UploadCloud className="w-4 h-4 text-[#0866C6]" />
-                        <span>Move / Sync Questionnaire to Backend</span>
-                      </>
-                    )}
-                  </button>
+                {/* Collapsible Content */}
+                {isBackendSettingsOpen && (
+                  <div className="mt-4 pt-4 border-t border-[#E8F3FF] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="text-xs text-[#5A6E85] space-y-1">
+                      <p className="font-semibold text-[#062B50]">
+                        Active Firestore Cloud Collections:
+                      </p>
+                      <p className="text-[11px] leading-relaxed">
+                        <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">students</code> (Profiles) •{' '}
+                        <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">submissions</code> (Final responses) •{' '}
+                        <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">drafts</code> (Autosaved progress) •{' '}
+                        <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">questionnaires</code> (64 questions, 13 sections)
+                      </p>
+                    </div>
 
-                  <button
-                    type="button"
-                    onClick={handleTestBackendPing}
-                    disabled={isTestingPing}
-                    className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-xs sm:text-sm transition-all cursor-pointer disabled:opacity-60"
-                    title="Verify read/write permissions to Firestore backend"
-                  >
-                    {isTestingPing ? (
-                      <RefreshCw className="w-4 h-4 animate-spin text-blue-200" />
-                    ) : (
-                      <Cloud className="w-4 h-4 text-blue-200" />
-                    )}
-                    <span>{backendPingResult ? `Ping: ${backendPingResult}` : 'Test Cloud Ping'}</span>
-                  </button>
+                    <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleSyncQuestionnaire}
+                        disabled={isSyncingQuestionnaire}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-xs transition-all shadow-xs cursor-pointer disabled:opacity-60"
+                        title="Upload or update all 64 questions & 13 sections in Firestore backend"
+                      >
+                        {isSyncingQuestionnaire ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Syncing to Cloud...</span>
+                          </>
+                        ) : (
+                          <>
+                            <UploadCloud className="w-3.5 h-3.5" />
+                            <span>Move / Sync Questionnaire to Backend</span>
+                          </>
+                        )}
+                      </button>
 
-                  <button
-                    type="button"
-                    onClick={loadData}
-                    className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-xs sm:text-sm transition-all cursor-pointer"
-                    title="Reload data from Firestore"
-                  >
-                    <RotateCcw className="w-4 h-4 text-blue-200" />
-                    <span className="hidden sm:inline">Refresh Data</span>
-                  </button>
-                </div>
+                      <button
+                        type="button"
+                        onClick={handleTestBackendPing}
+                        disabled={isTestingPing}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#D5E4F3] bg-white hover:bg-[#F2F7FC] text-[#062B50] font-semibold text-xs transition-colors cursor-pointer disabled:opacity-60"
+                        title="Verify read/write permissions to Firestore backend"
+                      >
+                        {isTestingPing ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#0866C6]" />
+                        ) : (
+                          <Cloud className="w-3.5 h-3.5 text-[#0866C6]" />
+                        )}
+                        <span>{backendPingResult ? `Ping: ${backendPingResult}` : 'Test Cloud Ping'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Load Error Banner */}
@@ -1368,6 +1570,21 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                         <span> (filtered from {students.length} total)</span>
                       )}
                     </span>
+
+                    {statusFilter !== 'all' && (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#EBF4FE] text-[#0866C6] border border-[#D5E4F3]">
+                        <span>Status: {statusFilter}</span>
+                        <button
+                          type="button"
+                          onClick={() => setStatusFilter('all')}
+                          className="hover:text-red-600 cursor-pointer ml-0.5 text-xs font-bold leading-none"
+                          title="Clear status filter"
+                          aria-label="Clear status filter"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    )}
 
                     {(searchQuery ||
                       classFilter !== 'all' ||

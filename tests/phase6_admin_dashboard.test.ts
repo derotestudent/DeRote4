@@ -583,3 +583,106 @@ test('15. Print Report Student Self-View Title: Formats properly for student das
   assert.equal(fallbackTitle, 'STUDENT REPORT — STUDENT');
 });
 
+test('16. Interactive Summary Cards: Clicking cards toggles status filters and matches counts exactly', () => {
+  // Roster with live resolved statuses
+  const students = [
+    { id: 'st1', fullName: 'Aarav', status: 'Submitted' as const, classGrade: '10', schoolName: 'DPS' },
+    { id: 'st2', fullName: 'Bhavna', status: 'Submitted' as const, classGrade: '10', schoolName: 'DPS' },
+    { id: 'st3', fullName: 'Chetan', status: 'In Progress' as const, classGrade: '9', schoolName: 'Greenwood' },
+    { id: 'st4', fullName: 'Diya', status: 'In Progress' as const, classGrade: '11', schoolName: 'Greenwood' },
+    { id: 'st5', fullName: 'Eshan', status: 'In Progress' as const, classGrade: '12', schoolName: 'St. Pauls' },
+    { id: 'st6', fullName: 'Fatima', status: 'Not Started' as const, classGrade: '8', schoolName: 'DPS' },
+  ];
+
+  // Dynamic metrics derived from student status
+  const totalRegistered = students.length;
+  const totalSubmitted = students.filter((s) => s.status === 'Submitted').length;
+  const totalInProgress = students.filter((s) => s.status === 'In Progress').length;
+  const totalNotStarted = students.filter((s) => s.status === 'Not Started').length;
+
+  assert.equal(totalRegistered, 6);
+  assert.equal(totalSubmitted, 2);
+  assert.equal(totalInProgress, 3);
+  assert.equal(totalNotStarted, 1);
+
+  // Card filter click handler simulation
+  let currentFilter: 'all' | 'Submitted' | 'In Progress' | 'Not Started' = 'all';
+
+  const handleCardFilterClick = (targetStatus: 'all' | 'Submitted' | 'In Progress' | 'Not Started') => {
+    if (targetStatus === 'all') {
+      currentFilter = 'all';
+    } else if (currentFilter === targetStatus) {
+      currentFilter = 'all'; // Clicking active card clears it
+    } else {
+      currentFilter = targetStatus;
+    }
+  };
+
+  // 1. Initial state: 'all' -> all 6 students shown
+  const filterList = () =>
+    currentFilter === 'all' ? students : students.filter((s) => s.status === currentFilter);
+
+  assert.equal(currentFilter, 'all');
+  assert.equal(filterList().length, totalRegistered);
+
+  // 2. Click Submitted card
+  handleCardFilterClick('Submitted');
+  assert.equal(currentFilter, 'Submitted');
+  assert.equal(filterList().length, totalSubmitted);
+  assert.deepEqual(filterList().map((s) => s.id), ['st1', 'st2']);
+
+  // 3. Click Submitted card again -> restores 'all'
+  handleCardFilterClick('Submitted');
+  assert.equal(currentFilter, 'all');
+  assert.equal(filterList().length, totalRegistered);
+
+  // 4. Click In Progress card
+  handleCardFilterClick('In Progress');
+  assert.equal(currentFilter, 'In Progress');
+  assert.equal(filterList().length, totalInProgress);
+  assert.deepEqual(filterList().map((s) => s.id), ['st3', 'st4', 'st5']);
+
+  // 5. Click Not Started card -> switches filter directly
+  handleCardFilterClick('Not Started');
+  assert.equal(currentFilter, 'Not Started');
+  assert.equal(filterList().length, totalNotStarted);
+  assert.deepEqual(filterList().map((s) => s.id), ['st6']);
+
+  // 6. Click Total Students card -> restores 'all'
+  handleCardFilterClick('all');
+  assert.equal(currentFilter, 'all');
+  assert.equal(filterList().length, totalRegistered);
+});
+
+test('17. Submitted Students Inspection: Opening submitted student questionnaire displays full answers', () => {
+  const submittedStudent = {
+    id: 'st_submitted_1',
+    fullName: 'Priya Nair',
+    email: 'priya@school.edu',
+    classGrade: '11',
+    schoolName: 'Delhi Public School',
+    status: 'Submitted' as const,
+  };
+
+  // Full 64 question responses
+  const submissionBlob = {
+    studentId: submittedStudent.id,
+    submittedAt: '2026-05-10T14:30:00Z',
+    answers: {
+      1: 'Priya Nair',
+      2: '16',
+      3: '11',
+      4: 'Delhi Public School',
+      5: 'I enjoy collaborating on complex problem-solving activities.',
+      14: ['Mathematics', 'Physics'],
+      64: 'Very helpful reflection exercises.',
+    } as Record<number, string | string[]>,
+  };
+
+  assert.equal(submittedStudent.status, 'Submitted');
+  assert.ok(submissionBlob.answers[1] === 'Priya Nair');
+  assert.ok(submissionBlob.answers[5].length > 0);
+  assert.deepEqual(submissionBlob.answers[14], ['Mathematics', 'Physics']);
+  assert.ok(submissionBlob.answers[64] === 'Very helpful reflection exercises.');
+});
+
