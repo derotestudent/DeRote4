@@ -1,5 +1,5 @@
 import React from 'react';
-import deroteLogo from '../assets/images/derote_logo_fitted.png';
+import deroteLogo from '../assets/images/derote_logo_fitted.webp';
 
 interface DeRoteWordmarkProps {
   showDescriptor?: boolean;
