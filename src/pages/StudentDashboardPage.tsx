@@ -52,6 +52,8 @@ interface SimpleReminder {
   id: string;
   title: string;
   text: string;
+  category: 'mindset' | 'growth' | 'wellbeing' | 'connection';
+  categoryLabel: string;
   accentBg: string;
   accentBorder: string;
   iconBg: string;
@@ -59,11 +61,21 @@ interface SimpleReminder {
   icon: React.ElementType;
 }
 
+const REMINDER_TABS = [
+  { id: 'all', label: 'All', count: 7 },
+  { id: 'mindset', label: 'Mindset', count: 3 },
+  { id: 'growth', label: 'Curiosity & Growth', count: 2 },
+  { id: 'wellbeing', label: 'Well-being', count: 1 },
+  { id: 'connection', label: 'Friendship', count: 1 },
+] as const;
+
 const REMINDERS: SimpleReminder[] = [
   {
     id: 'rem_1',
     title: 'Your Own Pace',
     text: "You don't have to figure out everything today. Taking things one day at a time is more than enough.",
+    category: 'mindset',
+    categoryLabel: 'Pace & Mindset',
     accentBg: 'bg-[#F0F6FD]',
     accentBorder: 'border-[#CCE3FC]',
     iconBg: 'bg-[#0866C6]/10',
@@ -74,6 +86,8 @@ const REMINDERS: SimpleReminder[] = [
     id: 'rem_2',
     title: 'Your Unique Path',
     text: 'No two journeys are the same. Focus on what brings you joy rather than comparing with others.',
+    category: 'growth',
+    categoryLabel: 'Self-Discovery',
     accentBg: 'bg-[#F4F9FD]',
     accentBorder: 'border-[#D1E6FB]',
     iconBg: 'bg-[#062B50]/10',
@@ -84,6 +98,8 @@ const REMINDERS: SimpleReminder[] = [
     id: 'rem_3',
     title: 'Rest Matters',
     text: 'Pausing to rest, listen to music, or take a breath helps your mind recharge and feel clear.',
+    category: 'wellbeing',
+    categoryLabel: 'Rest & Balance',
     accentBg: 'bg-[#F2FAF6]',
     accentBorder: 'border-[#D0EFE0]',
     iconBg: 'bg-[#107E54]/10',
@@ -94,6 +110,8 @@ const REMINDERS: SimpleReminder[] = [
     id: 'rem_4',
     title: 'Follow Curiosity',
     text: "You don't need a final plan right now. Exploring what interests you is how passions grow.",
+    category: 'growth',
+    categoryLabel: 'Curiosity & Goals',
     accentBg: 'bg-[#FAF6FD]',
     accentBorder: 'border-[#EADBFC]',
     iconBg: 'bg-[#7E3AF2]/10',
@@ -104,6 +122,8 @@ const REMINDERS: SimpleReminder[] = [
     id: 'rem_5',
     title: 'Room to Learn',
     text: 'Mistakes are simply part of trying. Give yourself the space to learn and try again.',
+    category: 'mindset',
+    categoryLabel: 'Learning & Growth',
     accentBg: 'bg-[#FFF9F2]',
     accentBorder: 'border-[#FFE3C7]',
     iconBg: 'bg-[#C26B00]/10',
@@ -114,6 +134,8 @@ const REMINDERS: SimpleReminder[] = [
     id: 'rem_6',
     title: 'True Friends',
     text: 'The best friendships let you be completely yourself, on quiet days and busy days alike.',
+    category: 'connection',
+    categoryLabel: 'Friendship & Trust',
     accentBg: 'bg-[#FEF6F7]',
     accentBorder: 'border-[#FCD3D9]',
     iconBg: 'bg-[#D93856]/10',
@@ -124,6 +146,8 @@ const REMINDERS: SimpleReminder[] = [
     id: 'rem_7',
     title: 'Trust Yourself',
     text: "Give yourself credit for how far you've come. You are capable of more than you realize.",
+    category: 'mindset',
+    categoryLabel: 'Self-Confidence',
     accentBg: 'bg-[#F2F8FD]',
     accentBorder: 'border-[#CCE3FC]',
     iconBg: 'bg-[#0866C6]/10',
@@ -137,6 +161,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
   const [submissionData, setSubmissionData] = useState<SubmissionData | null>(null);
   const [allAnswers, setAllAnswers] = useState<StudentAnswers>({});
+  const [activeReminderTab, setActiveReminderTab] = useState<string>('all');
   const [progressData, setProgressData] = useState<{
     hasDraft: boolean;
     currentSection: number;
@@ -260,6 +285,11 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
       year: 'numeric',
     });
   }, []);
+
+  const filteredReminders = useMemo(() => {
+    if (activeReminderTab === 'all') return REMINDERS;
+    return REMINDERS.filter((r) => r.category === activeReminderTab);
+  }, [activeReminderTab]);
 
   const studentDisplayName = student?.fullName || 'Student';
   const studentSchool = student?.schoolName || '—';
@@ -646,36 +676,83 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
         )}
 
         {/* ========================================================= */}
-        {/* SHORT, WARM REMINDERS (NO FILTERS, NO OVEREXPLAINING)      */}
+        {/* SHORT, WARM REMINDERS WITH SPACED TABS & REFINED CARDS    */}
         {/* ========================================================= */}
-        <section className="bg-white rounded-3xl border border-[#CCE3FC] p-6 sm:p-8 shadow-sm space-y-6">
-          <div className="border-b border-[#E8F3FF] pb-4">
-            <h2 className="text-xl sm:text-2xl font-extrabold text-[#062B50]">
-              Reminders for You
-            </h2>
+        <section className="bg-white rounded-2xl sm:rounded-3xl border border-[#CCE3FC] p-4 sm:p-8 shadow-sm space-y-5 sm:space-y-6">
+          <div className="border-b border-[#E8F3FF] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-extrabold text-[#062B50]">
+                Reminders for You
+              </h2>
+              <p className="text-xs sm:text-sm text-[#5A6E85] mt-0.5">
+                Gentle notes to encourage your journey and keep you grounded
+              </p>
+            </div>
+            <span className="text-xs font-semibold text-[#0866C6] bg-[#EBF4FE] px-2.5 py-1 rounded-full self-start sm:self-auto">
+              {filteredReminders.length} {filteredReminders.length === 1 ? 'note' : 'notes'}
+            </span>
           </div>
 
-          {/* Cards Grid: Short, warm, small lines */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-            {REMINDERS.map((card) => {
+          {/* Reminder Category Tabs with Touch-Friendly Mobile Spacing */}
+          <div>
+            <div className="-mx-4 px-4 sm:mx-0 sm:px-0 flex items-center gap-2 sm:gap-2.5 overflow-x-auto no-scrollbar scroll-smooth py-1">
+              {REMINDER_TABS.map((tab) => {
+                const isActive = activeReminderTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveReminderTab(tab.id)}
+                    className={`min-h-[40px] px-3.5 sm:px-4 py-2 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-150 flex items-center gap-1.5 shrink-0 select-none cursor-pointer ${
+                      isActive
+                        ? 'bg-[#0866C6] text-white shadow-sm shadow-[#0866C6]/25 ring-2 ring-[#0866C6]/30'
+                        : 'bg-[#F4F8FD] hover:bg-[#EAF2FC] text-[#4A5D73] hover:text-[#062B50] border border-[#CCE3FC]/60'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold transition-colors ${
+                        isActive
+                          ? 'bg-white/20 text-white'
+                          : 'bg-[#E0EEFC] text-[#0866C6]'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Cards Grid: Nicely Spaced & Styled for Mobile & Desktop */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-5 pt-1">
+            {filteredReminders.map((card) => {
               const IconComponent = card.icon;
               return (
                 <div
                   key={card.id}
-                  className={`p-5 rounded-2xl border ${card.accentBorder} ${card.accentBg} flex flex-col justify-between space-y-3`}
+                  className={`p-4 sm:p-5 rounded-2xl border ${card.accentBorder} ${card.accentBg} flex flex-col justify-between space-y-3.5 transition-all duration-150 shadow-2xs hover:shadow-sm`}
                 >
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-bold text-[#062B50]">
+                  <div className="space-y-2.5">
+                    {/* Top Row: Category tag + Icon badge */}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center text-[10px] sm:text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-white/80 text-[#062B50]/75 border border-black/5 shadow-2xs">
+                        {card.categoryLabel}
+                      </span>
+                      <div
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl ${card.iconBg} ${card.iconColor} flex items-center justify-center shrink-0 shadow-2xs`}
+                      >
+                        <IconComponent className="w-4 h-4" />
+                      </div>
+                    </div>
+
+                    <h3 className="text-base sm:text-lg font-bold text-[#062B50] leading-snug">
                       {card.title}
                     </h3>
-                    <div
-                      className={`w-7 h-7 rounded-lg ${card.iconBg} ${card.iconColor} flex items-center justify-center shrink-0`}
-                    >
-                      <IconComponent className="w-4 h-4" />
-                    </div>
                   </div>
 
-                  <p className="text-xs sm:text-sm text-[#4A5D73] leading-relaxed">
+                  <p className="text-xs sm:text-sm text-[#4A5D73] leading-relaxed pt-0.5">
                     {card.text}
                   </p>
                 </div>
@@ -725,8 +802,8 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
               </div>
             </div>
 
-            {/* Section Pills Navigation */}
-            <div className="px-5 sm:px-8 py-3 bg-[#F8FAFD] border-b border-[#E8F3FF] overflow-x-auto flex items-center gap-2 shrink-0">
+            {/* Section Pills Navigation with mobile spacing */}
+            <div className="px-4 sm:px-8 py-3 bg-[#F8FAFD] border-b border-[#E8F3FF] overflow-x-auto flex items-center gap-2 sm:gap-2.5 shrink-0 scroll-smooth">
               {SECTIONS.map((sec) => {
                 const isSelected = activeAnswersSection === sec.id;
                 return (
@@ -734,7 +811,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                     key={sec.id}
                     type="button"
                     onClick={() => setActiveAnswersSection(sec.id)}
-                    className={`min-h-[36px] px-3.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                    className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
                       isSelected
                         ? 'bg-[#0866C6] text-white shadow-xs'
                         : 'bg-white border border-[#D5E4F3] text-[#5A6E85] hover:bg-[#EBF4FE] hover:text-[#062B50]'
