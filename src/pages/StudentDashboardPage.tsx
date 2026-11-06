@@ -217,6 +217,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
         }
       } else {
         setIsCompleted(false);
+        setSubmissionData(null);
         const progress = await getQuestionnaireProgress();
         setProgressData(progress);
 
