@@ -141,9 +141,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
 
   // Subscribe to admin auth state
   useEffect(() => {
-    const unsub = onAdminAuthChange((current) => {
+    const unsub = onAdminAuthChange((current, ready) => {
       setAdmin(current);
-      if (!current) {
+      if (ready && !current) {
         onNavigate('/admin/login');
       }
     });

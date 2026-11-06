@@ -14,14 +14,14 @@ import { getCurrentStudent } from '../services/localAuth';
 // Visual Illustrations from assets (significantly compressed WebP for instant loading)
 import cardFamilyExpectations from '../assets/images/expectations.webp';
 import cardCareerConfusion from '../assets/images/confusion.webp';
-import cardFinancialPressure from '../assets/images/card_my_voice_choices_1791984301899.webp';
-import cardLostMotivation from '../assets/images/lost.webp';
-import cardStrugglingFocus from '../assets/images/1.webp';
+import cardFinancialPressure from '../assets/images/xx.png';
+import cardLostMotivation from '../assets/images/bb.png';
+import cardStrugglingFocus from '../assets/images/lost.png';
 import cardFeelingBehind from '../assets/images/behind.webp';
 import cardFindingStrengths from '../assets/images/mm.webp';
 import cardStudyingMarks from '../assets/images/nn.webp';
-import cardFearDisappointing from '../assets/images/card_feeling_behind_1791984272837.webp';
-import cardTooManyChoices from '../assets/images/futuristic_students_path_of_discovery.webp';
+import cardFearDisappointing from '../assets/images/cc.png';
+import cardTooManyChoices from '../assets/images/vv-1.png';
 
 interface LandingPageProps {
   onNavigate: (route: string) => void;

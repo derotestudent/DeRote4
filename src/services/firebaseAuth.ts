@@ -299,6 +299,17 @@ onAuthStateChanged(auth, async (firebaseUser: User | null) => {
   notifyAdminListeners();
 });
 
+// Safety fallback: Ensure authReady never stays false indefinitely if Firebase Auth resolution is delayed
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    if (!authReady) {
+      authReady = true;
+      notifyStudentListeners();
+      notifyAdminListeners();
+    }
+  }, 1500);
+}
+
 /**
  * Normalizes Firebase auth error messages into user-friendly text.
  */

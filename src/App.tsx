@@ -63,9 +63,14 @@ export default function App() {
       if (isAuthenticationReady()) setIsAuthReady(true);
     });
 
+    const fallbackTimer = setTimeout(() => {
+      setIsAuthReady(true);
+    }, 1500);
+
     return () => {
       unsubAdmin();
       unsubStudent();
+      clearTimeout(fallbackTimer);
     };
   }, []);
 
