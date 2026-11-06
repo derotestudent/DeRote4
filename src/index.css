@@ -4,6 +4,21 @@
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   }
+
+  /* Clean inputs - remove browser autofill shadow filling and keep boxes clean */
+  input, select, textarea {
+    box-shadow: none !important;
+  }
+
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover, 
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+    box-shadow: 0 0 0 1000px #ffffff inset !important;
+    -webkit-text-fill-color: #102C46 !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
 }
 
 /* On screen, hide the printable report area */

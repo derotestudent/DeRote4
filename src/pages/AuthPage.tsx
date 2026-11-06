@@ -235,7 +235,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
       {/* Main Authentication Card */}
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
-        <div className="bg-white rounded-3xl p-6 sm:p-10 border border-[#E8F3FF] shadow-xl max-w-md w-full">
+        <div className="bg-white rounded-3xl p-6 sm:p-10 border border-[#D5E4F3] shadow-none max-w-md w-full">
           {/* Two-Option Switcher */}
           <div className="grid grid-cols-2 p-1.5 bg-[#F2F7FC] rounded-2xl mb-8 border border-[#E2EDF8]">
             <button
@@ -246,7 +246,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               }}
               className={`py-2.5 text-sm font-bold rounded-xl transition-all cursor-pointer ${
                 mode === 'login'
-                  ? 'bg-white text-[#0866C6] shadow-sm'
+                  ? 'bg-white text-[#0866C6] shadow-none'
                   : 'text-[#64778C] hover:text-[#062B50]'
               }`}
             >
@@ -260,7 +260,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               }}
               className={`py-2.5 text-sm font-bold rounded-xl transition-all cursor-pointer ${
                 mode === 'signup'
-                  ? 'bg-white text-[#0866C6] shadow-sm'
+                  ? 'bg-white text-[#0866C6] shadow-none'
                   : 'text-[#64778C] hover:text-[#062B50]'
               }`}
             >
@@ -366,7 +366,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               type="button"
               onClick={handleGoogleSignIn}
               disabled={isLoading || isGoogleLoading}
-              className="w-full min-h-[48px] py-2.5 px-4 rounded-xl border border-[#D5E4F3] bg-white hover:bg-[#F8FAFD] text-[#062B50] text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-3 shadow-xs hover:border-[#0866C6]/40 active:scale-[0.99] disabled:opacity-60"
+              className="w-full min-h-[48px] py-2.5 px-4 rounded-xl border border-[#D5E4F3] bg-white hover:bg-[#F8FAFD] text-[#062B50] text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-3 shadow-none hover:border-[#0866C6]/40 active:scale-[0.99] disabled:opacity-60"
             >
               {isGoogleLoading ? (
                 <>
@@ -420,11 +420,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     type="email"
                     value={signInEmail}
                     onChange={(e) => setSignInEmail(e.target.value)}
-                    placeholder="student@example.com"
+                    placeholder=""
                     disabled={isLoading || isGoogleLoading}
                     required
                     autoComplete="email"
-                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
+                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] focus:border-[#0866C6] focus:outline-none shadow-none transition-all"
                   />
                 </div>
               </div>
@@ -439,11 +439,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     type={showSignInPassword ? 'text' : 'password'}
                     value={signInPassword}
                     onChange={(e) => setSignInPassword(e.target.value)}
-                    placeholder="Enter your password"
+                    placeholder=""
                     disabled={isLoading || isGoogleLoading}
                     required
                     autoComplete="current-password"
-                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
+                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] focus:border-[#0866C6] focus:outline-none shadow-none transition-all"
                   />
                   <button
                     type="button"
@@ -460,7 +460,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading || isGoogleLoading}
-                  className="w-full min-h-[48px] py-3 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
+                  className="w-full min-h-[48px] py-3 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-none disabled:opacity-60"
                 >
                   {isLoading ? (
                     <>
@@ -486,11 +486,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     type="text"
                     value={signupName}
                     onChange={(e) => setSignupName(e.target.value)}
-                    placeholder="Your full name"
+                    placeholder=""
                     disabled={isLoading || isGoogleLoading}
                     required
                     autoComplete="name"
-                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
+                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] focus:border-[#0866C6] focus:outline-none shadow-none transition-all"
                   />
                 </div>
               </div>
@@ -505,11 +505,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     type="email"
                     value={signupEmail}
                     onChange={(e) => setSignupEmail(e.target.value)}
-                    placeholder="student@example.com"
+                    placeholder=""
                     disabled={isLoading || isGoogleLoading}
                     required
                     autoComplete="email"
-                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
+                    className="w-full text-sm pl-10 pr-3.5 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] focus:border-[#0866C6] focus:outline-none shadow-none transition-all"
                   />
                 </div>
               </div>
@@ -524,12 +524,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     type={showSignupPassword ? 'text' : 'password'}
                     value={signupPassword}
                     onChange={(e) => setSignupPassword(e.target.value)}
-                    placeholder="At least 6 characters"
+                    placeholder=""
                     disabled={isLoading || isGoogleLoading}
                     required
                     minLength={6}
                     autoComplete="new-password"
-                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
+                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] focus:border-[#0866C6] focus:outline-none shadow-none transition-all"
                   />
                   <button
                     type="button"
@@ -552,12 +552,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     type={showConfirmPassword ? 'text' : 'password'}
                     value={signupConfirmPassword}
                     onChange={(e) => setSignupConfirmPassword(e.target.value)}
-                    placeholder="Confirm your password"
+                    placeholder=""
                     disabled={isLoading || isGoogleLoading}
                     required
                     minLength={6}
                     autoComplete="new-password"
-                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
+                    className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] focus:border-[#0866C6] focus:outline-none shadow-none transition-all"
                   />
                   <button
                     type="button"
@@ -574,7 +574,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading || isGoogleLoading}
-                  className="w-full min-h-[48px] py-3 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
+                  className="w-full min-h-[48px] py-3 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-none disabled:opacity-60"
                 >
                   {isLoading ? (
                     <>

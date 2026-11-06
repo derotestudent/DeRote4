@@ -89,7 +89,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
       </header>
 
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
-        <div className="max-w-md w-full bg-white rounded-3xl p-6 sm:p-8 border border-[#E8F3FF] shadow-xl">
+        <div className="max-w-md w-full bg-white rounded-3xl p-6 sm:p-8 border border-[#D5E4F3] shadow-none">
           <div className="w-12 h-12 rounded-2xl bg-[#E8F3FF] text-[#0866C6] flex items-center justify-center mb-5">
             <Shield className="w-6 h-6" />
           </div>
@@ -114,7 +114,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
               type="button"
               onClick={handleGoogleAdminLogin}
               disabled={isLoading || isGoogleLoading}
-              className="w-full min-h-[46px] py-2 px-4 rounded-xl border border-[#D5E4F3] bg-white hover:bg-[#F8FAFD] text-[#062B50] text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-3 shadow-xs hover:border-[#0866C6]/40 active:scale-[0.99] disabled:opacity-60"
+              className="w-full min-h-[46px] py-2 px-4 rounded-xl border border-[#D5E4F3] bg-white hover:bg-[#F8FAFD] text-[#062B50] text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-3 shadow-none hover:border-[#0866C6]/40 active:scale-[0.99] disabled:opacity-60"
             >
               {isGoogleLoading ? (
                 <>
@@ -164,9 +164,10 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="contact@derote.in"
+                placeholder=""
+                autoComplete="off"
                 required
-                className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none"
+                className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] focus:border-[#0866C6] focus:outline-none shadow-none"
               />
             </div>
 
@@ -178,16 +179,17 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
+                placeholder=""
+                autoComplete="current-password"
                 required
-                className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] outline-none"
+                className="w-full text-sm px-3.5 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] focus:border-[#0866C6] focus:outline-none shadow-none"
               />
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full min-h-[46px] rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm disabled:opacity-60"
+              className="w-full min-h-[46px] rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-none disabled:opacity-60"
             >
               {isLoading ? (
                 <>
