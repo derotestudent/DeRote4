@@ -34,7 +34,7 @@ import {
   getStudentSubmissionStatus,
 } from '../services/firestoreBackend';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
-import { SECTIONS, QUESTIONS, Question } from '../data/questionnaire';
+import { SECTIONS, QUESTIONS, Question, resolveQuestionAnswer } from '../data/questionnaire';
 import {
   AdminStudentRecord,
   QuestionnaireStatus,
@@ -1029,7 +1029,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                       const sectionQuestions = QUESTIONS.filter((q) => q.section === section.id);
                       // Incomplete response check for this section
                       const sectionHasAnswers = sectionQuestions.some((q) => {
-                        const val = selectedStudent.answers[q.n];
+                        const val = resolveQuestionAnswer(selectedStudent.answers, q.n);
                         return val !== undefined && val !== null && (typeof val === 'string' ? val.trim() !== '' : val.length > 0);
                       });
 
@@ -1054,7 +1054,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                           {/* Questions in Section */}
                           <div className="space-y-3.5 pl-1 sm:pl-3">
                             {sectionQuestions.map((q: Question) => {
-                              const answer = selectedStudent.answers[q.n];
+                              const answer = resolveQuestionAnswer(selectedStudent.answers, q.n);
                               const isAnswered =
                                 answer !== undefined &&
                                 answer !== null &&
@@ -1395,7 +1395,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                         <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">students</code> (Profiles) •{' '}
                         <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">submissions</code> (Final responses) •{' '}
                         <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">drafts</code> (Autosaved progress) •{' '}
-                        <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">questionnaires</code> (64 questions, 13 sections)
+                        <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">questionnaires</code> ({QUESTIONS.length} questions, {SECTIONS.length} sections)
                       </p>
                     </div>
 
@@ -1405,7 +1405,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                         onClick={handleSyncQuestionnaire}
                         disabled={isSyncingQuestionnaire}
                         className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-xs transition-all shadow-xs cursor-pointer disabled:opacity-60"
-                        title="Upload or update all 64 questions & 13 sections in Firestore backend"
+                        title={`Upload or update all ${QUESTIONS.length} questions & ${SECTIONS.length} sections in Firestore backend`}
                       >
                         {isSyncingQuestionnaire ? (
                           <>

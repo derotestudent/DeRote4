@@ -1,5 +1,5 @@
 import React from 'react';
-import { SECTIONS, QUESTIONS, Question } from '../data/questionnaire';
+import { SECTIONS, QUESTIONS, Question, resolveQuestionAnswer } from '../data/questionnaire';
 import { AdminStudentRecord, QuestionnaireStatus, formatClassDisplay } from '../services/studentAdminService';
 
 export interface PrintableStudentListReportProps {
@@ -259,7 +259,7 @@ export const PrintableReport: React.FC<PrintableReportProps> = (props) => {
                   {/* Section Questions */}
                   <div className="space-y-3.5">
                     {sectionQuestions.map((q: Question) => {
-                      const answer = studentAnswers[q.n];
+                      const answer = resolveQuestionAnswer(studentAnswers, q.n);
                       const hasAns =
                         answer !== undefined &&
                         answer !== null &&

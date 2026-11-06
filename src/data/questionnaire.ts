@@ -4,11 +4,11 @@
 // and may choose "Prefer not to answer" where provided.
 //
 // 'single' = pick one option, 'multi' = tick any that apply.
-// The PDF does not say which tickbox questions are single or multi (only Q56
+// The PDF does not say which tickbox questions are single or multi (only Q53
 // says "Choose any that fit"). The choices below are a first guess. To change
 // one, swap 's' for 'm' (or the reverse) on that line. Confirm with the HOD.
 
-export const QUESTIONNAIRE_VERSION = 1;
+export const QUESTIONNAIRE_VERSION = 2;
 
 export type TextQuestion = {
   n: number;
@@ -54,24 +54,23 @@ export const OUTRO = {
 };
 
 export const SECTIONS: { id: number; title: string; intro?: string }[] = [
-  { id: 1, title: 'ABOUT ME (PART 1)', intro: 'Personal information to create your student profile.' },
-  { id: 2, title: 'ABOUT ME (PART 2)', intro: 'A few reflective questions about how you see yourself.' },
-  { id: 3, title: 'MY ACADEMIC WORLD' },
-  { id: 4, title: 'MY STUDY HABITS' },
+  { id: 1, title: 'About Me', intro: 'A few reflective questions about how you see yourself.' },
+  { id: 2, title: 'MY ACADEMIC WORLD' },
+  { id: 3, title: 'MY STUDY HABITS' },
   {
-    id: 5,
+    id: 4,
     title: 'MY FEELINGS AND INNER WORLD',
     intro:
       'Feelings can change from day to day. You do not need to share anything you are not comfortable sharing.',
   },
-  { id: 6, title: 'MY STRENGTHS, INTERESTS AND TALENTS' },
-  { id: 7, title: 'MY MOTIVATION AND MINDSET' },
-  { id: 8, title: 'MY DIGITAL LIFE' },
-  { id: 9, title: 'MY FAMILY AND HOME' },
-  { id: 10, title: 'MY FRIENDS AND SOCIAL WORLD' },
-  { id: 11, title: 'MY DREAMS AND FUTURE' },
-  { id: 12, title: 'MY FEARS AND CHALLENGES' },
-  { id: 13, title: 'MY OWN VOICE' },
+  { id: 5, title: 'MY STRENGTHS, INTERESTS AND TALENTS' },
+  { id: 6, title: 'MY MOTIVATION AND MINDSET' },
+  { id: 7, title: 'MY DIGITAL LIFE' },
+  { id: 8, title: 'MY FAMILY AND HOME' },
+  { id: 9, title: 'MY FRIENDS AND SOCIAL WORLD' },
+  { id: 10, title: 'MY DREAMS AND FUTURE' },
+  { id: 11, title: 'MY FEARS AND CHALLENGES' },
+  { id: 12, title: 'MY OWN VOICE' },
 ];
 
 const t = (n: number, section: number, text: string, lines: number): TextQuestion => ({ n, section, type: 'text', text, lines });
@@ -79,19 +78,13 @@ const s = (n: number, section: number, text: string, options: string[]): ChoiceQ
 const m = (n: number, section: number, text: string, options: string[]): ChoiceQuestion => ({ n, section, type: 'multi', text, options });
 
 export const QUESTIONS: Question[] = [
-  // SECTION 1 | ABOUT ME (PART 1) - PERSONAL INFORMATION
-  t(1, 1, 'Name or student ID (if you have been told to use one):', 1),
-  t(2, 1, 'Age:', 1),
-  s(3, 1, 'Class:', ['8', '9', '10', '11', '12', 'Others']),
-  t(4, 1, 'School and Institute:', 1),
+  // SECTION 1 | ABOUT ME - SELF-REFLECTION (Merged from About Me Part 2, redundant profile questions removed)
+  t(1, 1, 'What are three words you would use to describe yourself?', 2),
+  t(2, 1, 'What do you most enjoy doing when you have free time?', 2),
+  t(3, 1, 'What is something about you that people may not easily notice?', 2),
 
-  // SECTION 2 | ABOUT ME (PART 2) - SELF-REFLECTION
-  t(5, 2, 'What are three words you would use to describe yourself?', 2),
-  t(6, 2, 'What do you most enjoy doing when you have free time?', 2),
-  t(7, 2, 'What is something about you that people may not easily notice?', 2),
-
-  // SECTION 3 | MY ACADEMIC WORLD
-  s(8, 3, 'How do you generally feel about studying?', [
+  // SECTION 2 | MY ACADEMIC WORLD
+  s(4, 2, 'How do you generally feel about studying?', [
     'I enjoy learning new things',
     'I like some subjects more than others',
     'I mainly study for marks or exams',
@@ -100,8 +93,8 @@ export const QUESTIONS: Question[] = [
     'It changes from day to day',
     'Prefer not to answer',
   ]),
-  t(9, 3, 'Which subjects do you enjoy most, and what do you like about them?', 2),
-  m(10, 3, 'Which subjects or topics feel most difficult at present?', [
+  t(5, 2, 'Which subjects do you enjoy most, and what do you like about them?', 2),
+  m(6, 2, 'Which subjects or topics feel most difficult at present?', [
     'Mathematics',
     'Science',
     'English / languages',
@@ -110,7 +103,7 @@ export const QUESTIONS: Question[] = [
     'Other subject',
     'No subject in particular',
   ]),
-  m(11, 3, 'When a topic is difficult, what is usually hardest for you?', [
+  m(7, 2, 'When a topic is difficult, what is usually hardest for you?', [
     'Understanding the idea',
     'Remembering facts or steps',
     'Applying ideas to new questions',
@@ -121,7 +114,7 @@ export const QUESTIONS: Question[] = [
     'I am not sure',
     'Other',
   ]),
-  m(12, 3, 'Which ways of learning help you understand best?', [
+  m(8, 2, 'Which ways of learning help you understand best?', [
     'Teacher explanation',
     'Examples from real life',
     'Experiments / practical activities',
@@ -132,7 +125,7 @@ export const QUESTIONS: Question[] = [
     'Group activities',
     'Other',
   ]),
-  m(13, 3, 'When you do not understand something in class, what do you usually do?', [
+  m(9, 2, 'When you do not understand something in class, what do you usually do?', [
     'Ask the teacher',
     'Ask a friend',
     'Look it up online / in a book',
@@ -141,7 +134,7 @@ export const QUESTIONS: Question[] = [
     'Leave it and move on',
     'Other',
   ]),
-  m(14, 3, 'How do you usually feel when you receive marks lower than you expected?', [
+  m(10, 2, 'How do you usually feel when you receive marks lower than you expected?', [
     'Disappointed but ready to try again',
     'Worried about what others will think',
     "Afraid of parents' / teachers' reaction",
@@ -152,8 +145,8 @@ export const QUESTIONS: Question[] = [
     'Prefer not to answer',
   ]),
 
-  // SECTION 4 | MY STUDY HABITS
-  s(15, 4, 'On a usual school day, how much time do you spend studying outside class (not counting school or coaching)?', [
+  // SECTION 3 | MY STUDY HABITS
+  s(11, 3, 'On a usual school day, how much time do you spend studying outside class (not counting school or coaching)?', [
     'Less than 30 minutes',
     '30–60 minutes',
     '1–2 hours',
@@ -161,7 +154,7 @@ export const QUESTIONS: Question[] = [
     'More than 3 hours',
     'It varies a lot',
   ]),
-  m(16, 4, 'When do you usually study?', [
+  m(12, 3, 'When do you usually study?', [
     'At a regular time',
     'Mostly in the evening',
     'Late at night',
@@ -170,7 +163,7 @@ export const QUESTIONS: Question[] = [
     'Whenever I get time',
     'I do not have a regular routine',
   ]),
-  s(17, 4, 'How often do you revise what you learned earlier?', [
+  s(13, 3, 'How often do you revise what you learned earlier?', [
     'Almost every day',
     'A few times a week',
     'Mainly before tests',
@@ -178,7 +171,7 @@ export const QUESTIONS: Question[] = [
     'Rarely',
     'I am unsure how to revise',
   ]),
-  m(18, 4, 'What most often interrupts or delays your study time?', [
+  m(14, 3, 'What most often interrupts or delays your study time?', [
     'Mobile / social media',
     'Games or videos',
     'Friends or family activities',
@@ -191,7 +184,7 @@ export const QUESTIONS: Question[] = [
     'I put it off even when I have time',
     'Other',
   ]),
-  m(19, 4, 'When you have homework or a task, how do you usually begin?', [
+  m(15, 3, 'When you have homework or a task, how do you usually begin?', [
     'I start soon',
     'I plan it and start later',
     'I wait until the deadline is close',
@@ -199,7 +192,7 @@ export const QUESTIONS: Question[] = [
     'I sometimes avoid starting',
     'It depends on the task',
   ]),
-  m(20, 4, 'What is your usual experience during exams?', [
+  m(16, 3, 'What is your usual experience during exams?', [
     'I feel prepared and calm',
     'I know the material but feel nervous',
     'I forget things under pressure',
@@ -208,10 +201,10 @@ export const QUESTIONS: Question[] = [
     'I often begin preparation late',
     'My experience varies',
   ]),
-  t(21, 4, 'Describe your usual study routine, including what works well and what is difficult.', 3),
+  t(17, 3, 'Describe your usual study routine, including what works well and what is difficult.', 3),
 
-  // SECTION 5 | MY FEELINGS AND INNER WORLD
-  s(22, 5, 'During the past few weeks, how often have you felt overwhelmed by schoolwork or expectations?', [
+  // SECTION 4 | MY FEELINGS AND INNER WORLD
+  s(18, 4, 'During the past few weeks, how often have you felt overwhelmed by schoolwork or expectations?', [
     'Never',
     'Rarely',
     'Sometimes',
@@ -219,7 +212,7 @@ export const QUESTIONS: Question[] = [
     'Almost always',
     'Prefer not to answer',
   ]),
-  m(23, 5, 'What kinds of things have been on your mind or worried you recently?', [
+  m(19, 4, 'What kinds of things have been on your mind or worried you recently?', [
     'Marks or exams',
     'Expectations from family',
     'Expectations from teachers',
@@ -233,7 +226,7 @@ export const QUESTIONS: Question[] = [
     'Something else',
     'Prefer not to answer',
   ]),
-  m(24, 5, 'When you feel upset, worried or disappointed, what do you usually do?', [
+  m(20, 4, 'When you feel upset, worried or disappointed, what do you usually do?', [
     'Talk to someone I trust',
     'Spend time alone',
     'Listen to music / do an activity',
@@ -243,7 +236,7 @@ export const QUESTIONS: Question[] = [
     'I am not sure',
     'Prefer not to answer',
   ]),
-  s(25, 5, 'How comfortable do you feel talking to an adult when something is bothering you?', [
+  s(21, 4, 'How comfortable do you feel talking to an adult when something is bothering you?', [
     'Very comfortable',
     'Somewhat comfortable',
     'Not very comfortable',
@@ -251,11 +244,11 @@ export const QUESTIONS: Question[] = [
     'It depends on the person',
     'Prefer not to answer',
   ]),
-  t(26, 5, 'What situations make you feel proud, happy or confident?', 2),
-  t(27, 5, 'Is there something you wish adults understood better about your feelings or experiences?', 3),
+  t(22, 4, 'What situations make you feel proud, happy or confident?', 2),
+  t(23, 4, 'Is there something you wish adults understood better about your feelings or experiences?', 3),
 
-  // SECTION 6 | MY STRENGTHS, INTERESTS AND TALENTS
-  m(28, 6, 'What do you think you are good at? This can be academic or non-academic.', [
+  // SECTION 5 | MY STRENGTHS, INTERESTS AND TALENTS
+  m(24, 5, 'What do you think you are good at? This can be academic or non-academic.', [
     'Explaining ideas',
     'Solving problems',
     'Making / building things',
@@ -270,13 +263,13 @@ export const QUESTIONS: Question[] = [
     'Something else',
     'I am still discovering my strengths',
   ]),
-  t(29, 6, 'What activity makes you so interested that you lose track of time?', 2),
-  t(30, 6, 'What is something you have done that you feel proud of, even if other people did not notice?', 2),
-  t(31, 6, 'What do friends, classmates or family members usually ask you for help with?', 2),
-  t(32, 6, 'What would you like to become better at, and why?', 2),
+  t(25, 5, 'What activity makes you so interested that you lose track of time?', 2),
+  t(26, 5, 'What is something you have done that you feel proud of, even if other people did not notice?', 2),
+  t(27, 5, 'What do friends, classmates or family members usually ask you for help with?', 2),
+  t(28, 5, 'What would you like to become better at, and why?', 2),
 
-  // SECTION 7 | MY MOTIVATION AND MINDSET
-  m(33, 7, 'What usually motivates you to study or work towards a goal?', [
+  // SECTION 6 | MY MOTIVATION AND MINDSET
+  m(29, 6, 'What usually motivates you to study or work towards a goal?', [
     'Curiosity / learning',
     'Achieving good marks',
     'My future career',
@@ -289,7 +282,7 @@ export const QUESTIONS: Question[] = [
     'I am still figuring this out',
     'Other',
   ]),
-  m(34, 7, 'What tends to reduce your motivation?', [
+  m(30, 6, 'What tends to reduce your motivation?', [
     'The work feels too difficult',
     'I do not see the purpose',
     'Fear of getting it wrong',
@@ -302,7 +295,7 @@ export const QUESTIONS: Question[] = [
     'Other',
     'Prefer not to answer',
   ]),
-  m(35, 7, 'When you make a mistake or fail at something, what do you usually think or do?', [
+  m(31, 6, 'When you make a mistake or fail at something, what do you usually think or do?', [
     'Try again in a different way',
     'Ask someone for help',
     'Think about what went wrong',
@@ -312,11 +305,11 @@ export const QUESTIONS: Question[] = [
     'It depends on the situation',
     'Other',
   ]),
-  t(36, 7, 'Who inspires you, and what do you admire about that person?', 2),
-  t(37, 7, 'What makes a day feel meaningful or successful to you?', 2),
+  t(32, 6, 'Who inspires you, and what do you admire about that person?', 2),
+  t(33, 6, 'What makes a day feel meaningful or successful to you?', 2),
 
-  // SECTION 8 | MY DIGITAL LIFE
-  s(38, 8, 'On a usual day, how much time do you spend on a phone or other personal screen outside schoolwork?', [
+  // SECTION 7 | MY DIGITAL LIFE
+  s(34, 7, 'On a usual day, how much time do you spend on a phone or other personal screen outside schoolwork?', [
     'Less than 1 hour',
     '1–2 hours',
     '2–3 hours',
@@ -324,7 +317,7 @@ export const QUESTIONS: Question[] = [
     'More than 5 hours',
     'I do not know',
   ]),
-  m(39, 8, 'What do you mainly use your phone or the internet for?', [
+  m(35, 7, 'What do you mainly use your phone or the internet for?', [
     'Study / learning',
     'Messaging or calls',
     'Social media',
@@ -334,7 +327,7 @@ export const QUESTIONS: Question[] = [
     'Creative work',
     'Other',
   ]),
-  s(40, 8, 'How does your screen use affect your sleep, study, mood or relationships, if at all?', [
+  s(36, 7, 'How does your screen use affect your sleep, study, mood or relationships, if at all?', [
     'Mostly helps me',
     'Mostly distracts me',
     'Both helps and distracts me',
@@ -342,7 +335,7 @@ export const QUESTIONS: Question[] = [
     'I am unsure',
     'Prefer not to answer',
   ]),
-  s(41, 8, 'When you intend to stop using a device and return to another activity, how easy or difficult is that for you?', [
+  s(37, 7, 'When you intend to stop using a device and return to another activity, how easy or difficult is that for you?', [
     'Very easy',
     'Somewhat easy',
     'Somewhat difficult',
@@ -351,8 +344,8 @@ export const QUESTIONS: Question[] = [
     'Prefer not to answer',
   ]),
 
-  // SECTION 9 | MY FAMILY AND HOME
-  s(42, 9, 'How comfortable do you feel sharing your thoughts and problems with your family?', [
+  // SECTION 8 | MY FAMILY AND HOME
+  s(38, 8, 'How comfortable do you feel sharing your thoughts and problems with your family?', [
     'Very comfortable',
     'Mostly comfortable',
     'Sometimes comfortable',
@@ -361,8 +354,8 @@ export const QUESTIONS: Question[] = [
     'It depends on the topic',
     'Prefer not to answer',
   ]),
-  t(43, 9, 'What do you feel your family expects from you regarding studies and your future?', 2),
-  m(44, 9, 'How do you usually experience conversations at home about marks or academic performance?', [
+  t(39, 8, 'What do you feel your family expects from you regarding studies and your future?', 2),
+  m(40, 8, 'How do you usually experience conversations at home about marks or academic performance?', [
     'Encouraging',
     'Practical and focused on improvement',
     'Mostly focused on marks',
@@ -372,7 +365,7 @@ export const QUESTIONS: Question[] = [
     'It varies',
     'Prefer not to answer',
   ]),
-  m(45, 9, 'What is your usual study environment at home?', [
+  m(41, 8, 'What is your usual study environment at home?', [
     'Quiet place of my own',
     'Shared room / shared space',
     'Often noisy or interrupted',
@@ -382,10 +375,10 @@ export const QUESTIONS: Question[] = [
     'Other',
     'Prefer not to answer',
   ]),
-  t(46, 9, 'What do you wish your family knew about your daily life, effort or challenges?', 3),
+  t(42, 8, 'What do you wish your family knew about your daily life, effort or challenges?', 3),
 
-  // SECTION 10 | MY FRIENDS AND SOCIAL WORLD
-  m(47, 10, 'How do you usually feel around classmates and friends?', [
+  // SECTION 9 | MY FRIENDS AND SOCIAL WORLD
+  m(43, 9, 'How do you usually feel around classmates and friends?', [
     'I feel accepted and comfortable',
     'I have a few close friends',
     'I often feel left out',
@@ -394,7 +387,7 @@ export const QUESTIONS: Question[] = [
     'It changes depending on the group',
     'Prefer not to answer',
   ]),
-  s(48, 10, 'How often do you compare your marks, appearance, abilities or life with other people?', [
+  s(44, 9, 'How often do you compare your marks, appearance, abilities or life with other people?', [
     'Never',
     'Rarely',
     'Sometimes',
@@ -402,18 +395,18 @@ export const QUESTIONS: Question[] = [
     'Very often',
     'Prefer not to answer',
   ]),
-  s(49, 10, 'Have friends or classmates ever influenced a decision you made about studying, behaviour or your future?', [
+  s(45, 9, 'Have friends or classmates ever influenced a decision you made about studying, behaviour or your future?', [
     'Yes, positively',
     'Yes, negatively',
     'Both positively and negatively',
     'Not really',
     'Prefer not to answer',
   ]),
-  t(50, 10, 'What helps you feel included, respected and comfortable with other people?', 2),
-  t(51, 10, 'Is there anything about friendships, teasing, exclusion or peer pressure that you would like adults to understand? (Optional)', 2),
+  t(46, 9, 'What helps you feel included, respected and comfortable with other people?', 2),
+  t(47, 9, 'Is there anything about friendships, teasing, exclusion or peer pressure that you would like adults to understand? (Optional)', 2),
 
-  // SECTION 11 | MY DREAMS AND FUTURE
-  s(52, 11, 'Have you thought about what you might like to do after school?', [
+  // SECTION 10 | MY DREAMS AND FUTURE
+  s(48, 10, 'Have you thought about what you might like to do after school?', [
     'Yes, I have a clear idea',
     'I have a few ideas',
     'I am exploring options',
@@ -421,8 +414,8 @@ export const QUESTIONS: Question[] = [
     'I have not thought much about it',
     'Prefer not to answer',
   ]),
-  t(53, 11, 'What careers, fields or kinds of work interest you right now? What attracts you to them?', 3),
-  m(54, 11, 'When you imagine a good future for yourself, what matters most?', [
+  t(49, 10, 'What careers, fields or kinds of work interest you right now? What attracts you to them?', 3),
+  m(50, 10, 'When you imagine a good future for yourself, what matters most?', [
     'Doing work I enjoy',
     'Financial security',
     'Helping people / society',
@@ -435,8 +428,8 @@ export const QUESTIONS: Question[] = [
     'I am not sure yet',
     'Other',
   ]),
-  t(55, 11, 'What questions or uncertainties do you have about your future?', 3),
-  s(56, 11, 'Are there expectations from other people that influence what you think you should become?', [
+  t(51, 10, 'What questions or uncertainties do you have about your future?', 3),
+  s(52, 10, 'Are there expectations from other people that influence what you think you should become?', [
     'Yes, a lot',
     'Somewhat',
     'A little',
@@ -445,8 +438,8 @@ export const QUESTIONS: Question[] = [
     'Prefer not to answer',
   ]),
 
-  // SECTION 12 | MY FEARS AND CHALLENGES
-  m(57, 12, 'Which situations feel most difficult for you? Choose any that fit.', [
+  // SECTION 11 | MY FEARS AND CHALLENGES
+  m(53, 11, 'Which situations feel most difficult for you? Choose any that fit.', [
     'Speaking in front of others',
     'Asking questions in class',
     'Making mistakes',
@@ -461,8 +454,8 @@ export const QUESTIONS: Question[] = [
     'Something else',
     'Prefer not to answer',
   ]),
-  t(58, 12, 'Is there a fear or challenge that people may not realise you are dealing with? (Optional)', 3),
-  m(59, 12, 'When you need help, what can make it difficult to ask for it?', [
+  t(54, 11, 'Is there a fear or challenge that people may not realise you are dealing with? (Optional)', 3),
+  m(55, 11, 'When you need help, what can make it difficult to ask for it?', [
     'Fear of being judged',
     'Worry that others will know',
     'Not knowing whom to approach',
@@ -473,14 +466,36 @@ export const QUESTIONS: Question[] = [
     'Prefer not to answer',
   ]),
 
-  // SECTION 13 | MY OWN VOICE
-  t(60, 13, 'What is the biggest thing you wish teachers understood about you as a student?', 3),
-  t(61, 13, 'What is the biggest thing you wish your parents or family understood about you?', 3),
-  t(62, 13, 'What do adults often misunderstand about students of your age?', 3),
-  t(63, 13, 'Is there anything important about you, your life or your experiences that this questionnaire has not asked?', 4),
-  t(64, 13, 'Is there any answer you would like to explain further or any topic you prefer to discuss privately with a trusted adult?', 3),
+  // SECTION 12 | MY OWN VOICE
+  t(56, 12, 'What is the biggest thing you wish teachers understood about you as a student?', 3),
+  t(57, 12, 'What is the biggest thing you wish your parents or family understood about you?', 3),
+  t(58, 12, 'What do adults often misunderstand about students of your age?', 3),
+  t(59, 12, 'Is there anything important about you, your life or your experiences that this questionnaire has not asked?', 4),
+  t(60, 12, 'Is there any answer you would like to explain further or any topic you prefer to discuss privately with a trusted adult?', 3),
 ];
 
 // Questions whose written answers the admin should see first when not blank
-// (only if you decide to build that view; the PDF does not ask for it).
-export const ATTENTION_QUESTIONS = [27, 51, 58, 63, 64];
+export const ATTENTION_QUESTIONS = [23, 47, 54, 59, 60];
+
+/**
+ * Resolves an answer for a question from student answers,
+ * supporting both Version 2 (1..60) and legacy Version 1 (1..64) submissions.
+ */
+export function resolveQuestionAnswer(
+  answers: Record<number, string | string[]> | undefined,
+  questionNumber: number,
+  submissionVersion?: number
+): string | string[] | undefined {
+  if (!answers) return undefined;
+  const isLegacy =
+    submissionVersion === 1 ||
+    answers[64] !== undefined ||
+    answers[63] !== undefined ||
+    answers[62] !== undefined ||
+    answers[61] !== undefined;
+
+  if (isLegacy) {
+    return answers[questionNumber + 4] ?? answers[questionNumber];
+  }
+  return answers[questionNumber];
+}

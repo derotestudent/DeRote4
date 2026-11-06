@@ -109,13 +109,13 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
       // 2. Load questions from Firestore backend if available, or auto-seed
       try {
         const cloudQ = await getQuestionnaireFromBackend();
-        if (cloudQ && cloudQ.questions && cloudQ.questions.length > 0) {
+        if (cloudQ && cloudQ.questions && cloudQ.questions.length > 0 && cloudQ.version === QUESTIONNAIRE_VERSION) {
           if (isMountedRef.current) {
             setSections(cloudQ.sections);
             setQuestions(cloudQ.questions);
           }
         } else {
-          seedQuestionnaireToBackend(false).catch(() => {});
+          seedQuestionnaireToBackend(true).catch(() => {});
         }
       } catch (err) {
         console.warn('Backend questionnaire load fallback to local:', err);
@@ -129,8 +129,8 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
         setAnswers(draft.answers || {});
         setDraftVersion(draft.version || QUESTIONNAIRE_VERSION);
 
-        // Sync Part 1 if present
-        if (draft.answers && (draft.answers[1] || draft.answers[2] || draft.answers[3] || draft.answers[4])) {
+        // Sync Part 1 only if legacy Version 1 answers are present
+        if (draft.version === 1 && draft.answers && (draft.answers[1] || draft.answers[2] || draft.answers[3] || draft.answers[4])) {
           syncStudentProfileFromPart1(draft.answers);
         }
 
@@ -235,7 +235,7 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
 
   const handleNextFromSection = async () => {
     await flushPendingDraft();
-    if (currentSection === 1) {
+    if (currentSection === 1 && draftVersion === 1) {
       syncStudentProfileFromPart1(answers);
     }
 
@@ -781,41 +781,46 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
           </div>
 
           {/* Profile details summary card */}
-          {answers[1] || answers[3] || answers[4] ? (
-            <div className="bg-[#F8FAFD] border border-[#E8F3FF] p-4 rounded-2xl text-left space-y-1.5 text-xs sm:text-sm">
-              <div className="text-xs font-bold uppercase tracking-wider text-[#0866C6] mb-1">
-                Student Profile Verified
+          {(() => {
+            const currentStudent = getCurrentStudent();
+            const studentName = currentStudent?.fullName || (draftVersion === 1 ? (answers[1] as string) : '') || 'Student';
+            const studentAge = currentStudent?.age || (draftVersion === 1 ? (answers[2] as string) : '');
+            const studentClass = currentStudent?.classGrade || (draftVersion === 1 ? (answers[3] as string) : '');
+            const studentSchool = currentStudent?.schoolName || (draftVersion === 1 ? (answers[4] as string) : '');
+
+            return (
+              <div className="bg-[#F8FAFD] border border-[#E8F3FF] p-4 rounded-2xl text-left space-y-1.5 text-xs sm:text-sm">
+                <div className="text-xs font-bold uppercase tracking-wider text-[#0866C6] mb-1">
+                  Student Profile Verified
+                </div>
+                <div className="text-[#062B50]">
+                  <span className="text-[#64778C]">Name:</span> <strong>{studentName}</strong>
+                </div>
+                {studentAge && (
+                  <div className="text-[#062B50]">
+                    <span className="text-[#64778C]">Age:</span> <strong>{studentAge}</strong>
+                  </div>
+                )}
+                {studentClass && (
+                  <div className="text-[#062B50]">
+                    <span className="text-[#64778C]">Class:</span> <strong>{studentClass}</strong>
+                  </div>
+                )}
+                {studentSchool && (
+                  <div className="text-[#062B50]">
+                    <span className="text-[#64778C]">School / Institute:</span> <strong>{studentSchool}</strong>
+                  </div>
+                )}
               </div>
-              <div className="text-[#062B50]">
-                <span className="text-[#64778C]">Name:</span> <strong>{answers[1] || 'Student'}</strong>
-              </div>
-              {answers[2] && (
-                <div className="text-[#062B50]">
-                  <span className="text-[#64778C]">Age:</span> <strong>{answers[2]}</strong>
-                </div>
-              )}
-              {answers[3] && (
-                <div className="text-[#062B50]">
-                  <span className="text-[#64778C]">Class:</span> <strong>{answers[3]}</strong>
-                </div>
-              )}
-              {answers[4] && (
-                <div className="text-[#062B50]">
-                  <span className="text-[#64778C]">School / Institute:</span> <strong>{answers[4]}</strong>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="bg-[#F4F8FD] border border-[#E8F3FF] p-4 rounded-2xl text-xs sm:text-sm text-[#062B50] font-medium">
-              Your responses are purely reflective and help you understand your unique paths without grades or ranking.
-            </div>
-          )}
+            );
+          })()}
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
               type="button"
               onClick={() => {
-                const studentName = answers[1] ? String(answers[1]) : 'STUDENT';
+                const currentStudent = getCurrentStudent();
+                const studentName = currentStudent?.fullName || (draftVersion === 1 && answers[1] ? String(answers[1]) : 'STUDENT');
                 executePrint(`STUDENT REPORT — ${studentName.toUpperCase()}`);
               }}
               className="w-full sm:w-auto min-h-[46px] px-6 py-3 bg-white border border-[#CCE3FC] text-[#062B50] hover:bg-[#F2F7FC] hover:border-[#0866C6] font-bold text-xs sm:text-sm rounded-xl cursor-pointer transition-all shadow-xs inline-flex items-center justify-center gap-2"

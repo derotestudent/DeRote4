@@ -40,7 +40,7 @@ import {
   SubmissionData,
   StudentAnswers,
 } from '../services/api';
-import { SECTIONS, QUESTIONS } from '../data/questionnaire';
+import { SECTIONS, QUESTIONS, resolveQuestionAnswer } from '../data/questionnaire';
 import { executePrint } from '../utils/printHelper';
 import { PrintableReport } from '../components/PrintableReport';
 
@@ -381,7 +381,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                   <p className="text-xl sm:text-2xl font-extrabold text-[#062B50] mt-1">
                     {progressData?.answeredCount || 0}{' '}
                     <span className="text-xs font-medium text-[#8EA3B8]">
-                      of {progressData?.totalQuestions || 64}
+                      of {progressData?.totalQuestions || QUESTIONS.length}
                     </span>
                   </p>
                 </div>
@@ -394,7 +394,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                     Section {progressData?.currentSection || 1}
                   </p>
                   <p className="text-xs text-[#5A6E85] truncate">
-                    {progressData?.sectionTitle || 'About Me (Part 1)'}
+                    {progressData?.sectionTitle || 'About Me'}
                   </p>
                 </div>
 
@@ -773,7 +773,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                     {/* Questions & Answers List */}
                     <div className="space-y-3.5">
                       {sectionQuestions.map((q) => {
-                        const ans = allAnswers[q.n];
+                        const ans = resolveQuestionAnswer(allAnswers, q.n);
                         const hasAnswer =
                           ans !== undefined &&
                           ans !== null &&

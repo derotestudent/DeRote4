@@ -15,7 +15,6 @@ import {
   Loader2,
 } from 'lucide-react';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
-import { SchoolAutocompleteInput } from '../components/SchoolAutocompleteInput';
 import {
   getCurrentStudent,
   onLocalAuthChange,
@@ -126,7 +125,7 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
     const cleanSchool = schoolName.trim();
     if (isCompletionMode) {
       if (!cleanSchool) {
-        setErrorMessage('Please enter or select your School / Institution Name.');
+        setErrorMessage('Please enter your School / Institution Name.');
         return;
       }
       if (KNOWN_PLACEHOLDER_SCHOOLS.includes(cleanSchool.toLowerCase())) {
@@ -359,7 +358,7 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <label
-                  htmlFor="school-autocomplete-input"
+                  htmlFor="school-name-input"
                   className="text-xs sm:text-sm font-bold text-[#062B50] flex items-center gap-2"
                 >
                   <School className="w-4 h-4 text-[#0866C6]" />
@@ -378,26 +377,34 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
               </div>
 
               {isCompletionMode ? (
-                <SchoolAutocompleteInput
-                  value={schoolName}
-                  onChange={setSchoolName}
-                  placeholder="Start typing school or institution name..."
-                  id="school-autocomplete-input"
-                />
+                <div className="relative">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-[#64778C]">
+                    <School className="w-4 h-4 text-[#0866C6]" />
+                  </div>
+                  <input
+                    id="school-name-input"
+                    type="text"
+                    value={schoolName}
+                    onChange={(e) => setSchoolName(e.target.value)}
+                    placeholder="Enter your school or institution name..."
+                    required
+                    className="w-full min-h-[48px] pl-10 pr-4 rounded-xl border border-[#062B50]/15 focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/20 bg-white text-sm sm:text-base text-[#102C46] placeholder-[#64778C]/60 outline-none transition-all shadow-none"
+                  />
+                </div>
               ) : (
                 <input
                   type="text"
                   value={student?.schoolName || schoolName}
                   disabled
                   readOnly
-                  className="w-full px-4 py-3 rounded-xl border border-[#E2EDF8] bg-[#F7FAFD] text-[#64778C] font-semibold text-sm sm:text-base cursor-not-allowed select-none"
+                  className="w-full px-4 py-3 rounded-xl border border-[#E2EDF8] bg-[#F7FAFD] text-[#64778C] font-semibold text-sm sm:text-base cursor-not-allowed select-none shadow-none"
                 />
               )}
               <p className="text-[11px] text-[#8EA3B8] flex items-center gap-1.5 pl-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#0866C6]" />
                 <span>
                   {isCompletionMode
-                    ? 'Select your school from the directory or type the full institution name.'
+                    ? 'Enter the full name of your school, college, or educational institution.'
                     : 'Institution is fixed by school administrative coordination.'}
                 </span>
               </p>

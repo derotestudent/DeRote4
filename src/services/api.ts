@@ -294,6 +294,23 @@ export async function loadDraft(
     try {
       const cloudDraft = await loadDraftFromBackend(uid);
       if (cloudDraft && cloudDraft.answers && Object.keys(cloudDraft.answers).length > 0) {
+        let answers = cloudDraft.answers;
+        let currentSection = cloudDraft.currentSection;
+        const draftVer = cloudDraft.version || 1;
+
+        // Migrate legacy Version 1 draft to Version 2 if needed
+        if (draftVer === 1 && (answers[64] !== undefined || answers[5] !== undefined || answers[4] !== undefined)) {
+          const migrated: StudentAnswers = {};
+          for (const [kStr, val] of Object.entries(answers)) {
+            const k = Number(kStr);
+            if (k >= 5) {
+              migrated[k - 4] = val;
+            }
+          }
+          answers = migrated;
+          currentSection = Math.max(1, currentSection - 1);
+        }
+
         // Cache in namespaced local storage
         if (typeof localStorage !== 'undefined') {
           try {
@@ -301,18 +318,18 @@ export async function loadDraft(
               getDraftStorageKey(uid),
               JSON.stringify({
                 studentId: uid,
-                answers: cloudDraft.answers,
-                currentSection: cloudDraft.currentSection,
-                version: cloudDraft.version || QUESTIONNAIRE_VERSION,
+                answers,
+                currentSection,
+                version: QUESTIONNAIRE_VERSION,
                 updatedAt: cloudDraft.updatedAt || new Date().toISOString(),
               })
             );
           } catch {}
         }
         return {
-          answers: cloudDraft.answers,
-          currentSection: cloudDraft.currentSection,
-          version: cloudDraft.version || QUESTIONNAIRE_VERSION,
+          answers,
+          currentSection,
+          version: QUESTIONNAIRE_VERSION,
         };
       }
     } catch (err) {
@@ -576,7 +593,7 @@ export async function getQuestionnaireProgress(): Promise<{
       answeredCount: 0,
       totalQuestions,
       progressPercent: 0,
-      sectionTitle: SECTIONS[0]?.title || 'About Me (Part 1)',
+      sectionTitle: SECTIONS[0]?.title || 'About Me',
       answers: {},
     };
   }

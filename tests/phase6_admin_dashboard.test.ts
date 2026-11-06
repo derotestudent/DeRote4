@@ -24,7 +24,7 @@ import {
   formatClassDisplay,
   getReportTitle,
 } from '../src/services/studentAdminService';
-import { QUESTIONS, SECTIONS } from '../src/data/questionnaire';
+import { QUESTIONS, SECTIONS, resolveQuestionAnswer } from '../src/data/questionnaire';
 
 // Mock storage
 const mockStorage: Record<string, string> = {};
@@ -214,18 +214,26 @@ test('5. Pagination: Page slicing and boundary validation', () => {
   assert.equal(page4[9].fullName, 'Student 55');
 });
 
-test('6. Questionnaire Responses: All 64 questions preserved across 13 sections with exact wording', () => {
-  assert.equal(QUESTIONS.length, 64);
-  assert.equal(SECTIONS.length, 13);
+test('6. Questionnaire Responses: 60 questions preserved across 12 sections with exact wording', () => {
+  assert.equal(QUESTIONS.length, 60);
+  assert.equal(SECTIONS.length, 12);
+  assert.equal(SECTIONS[0].title, 'About Me');
 
-  // Verify all questions have valid numbers 1..64
-  for (let i = 1; i <= 64; i++) {
+  // Verify all questions have valid numbers 1..60
+  for (let i = 1; i <= 60; i++) {
     const q = QUESTIONS.find((item) => item.n === i);
     assert.ok(q, `Question Q${i} must exist`);
     assert.ok(q.text && q.text.trim().length > 0, `Question Q${i} must have text`);
     assert.ok(['text', 'single', 'multi'].includes(q.type), `Question Q${i} must have valid type`);
-    assert.ok(q.section >= 1 && q.section <= 13, `Question Q${i} must belong to section 1..13`);
+    assert.ok(q.section >= 1 && q.section <= 12, `Question Q${i} must belong to section 1..12`);
   }
+
+  // Verify section 1 has exactly the 3 merged reflection questions
+  const section1Questions = QUESTIONS.filter((q) => q.section === 1);
+  assert.equal(section1Questions.length, 3);
+  assert.equal(section1Questions[0].text, 'What are three words you would use to describe yourself?');
+  assert.equal(section1Questions[1].text, 'What do you most enjoy doing when you have free time?');
+  assert.equal(section1Questions[2].text, 'What is something about you that people may not easily notice?');
 
   // Answer rendering: written text is never truncated
   const longWrittenAnswer = 'A'.repeat(1500); // 1,500 characters
@@ -685,4 +693,65 @@ test('17. Submitted Students Inspection: Opening submitted student questionnaire
   assert.deepEqual(submissionBlob.answers[14], ['Mathematics', 'Physics']);
   assert.ok(submissionBlob.answers[64] === 'Very helpful reflection exercises.');
 });
+
+test('18. Questionnaire About Me Cleanup & Legacy Answer Resolution', () => {
+  // 1. Verify redundant Part 1 profile questions were removed
+  const questionTexts = QUESTIONS.map((q) => q.text);
+  assert.equal(questionTexts.includes('Name or student ID (if you have been told to use one):'), false);
+  assert.equal(questionTexts.includes('Age:'), false);
+  assert.equal(questionTexts.includes('Class:'), false);
+  assert.equal(questionTexts.includes('School and Institute:'), false);
+
+  // 2. Verify remaining About Me questions
+  const aboutMeQuestions = QUESTIONS.filter((q) => q.section === 1);
+  assert.equal(aboutMeQuestions.length, 3);
+  assert.deepEqual(
+    aboutMeQuestions.map((q) => q.text),
+    [
+      'What are three words you would use to describe yourself?',
+      'What do you most enjoy doing when you have free time?',
+      'What is something about you that people may not easily notice?',
+    ]
+  );
+
+  // 3. Test resolveQuestionAnswer with legacy Version 1 submission (keyed 1..64)
+  const legacyV1Answers: Record<number, string | string[]> = {
+    1: 'Aarav Sharma', // old name
+    2: '15',           // old age
+    3: '10',           // old class
+    4: 'DPS School',   // old school
+    5: 'Curious, cheerful, focused', // old Q5 -> new Q1
+    6: 'Reading books',              // old Q6 -> new Q2
+    7: 'I like quiet evenings',       // old Q7 -> new Q3
+    8: 'I enjoy learning new things',// old Q8 -> new Q4
+    64: 'Private note to teacher',   // old Q64 -> new Q60
+  };
+
+  // For question 1 (What are three words...): legacy resolves key 5 (1 + 4)
+  assert.equal(resolveQuestionAnswer(legacyV1Answers, 1, 1), 'Curious, cheerful, focused');
+  assert.notEqual(resolveQuestionAnswer(legacyV1Answers, 1, 1), 'Aarav Sharma'); // Must not return profile name!
+
+  // For question 2 (What do you enjoy...): legacy resolves key 6
+  assert.equal(resolveQuestionAnswer(legacyV1Answers, 2, 1), 'Reading books');
+
+  // For question 3 (What is something...): legacy resolves key 7
+  assert.equal(resolveQuestionAnswer(legacyV1Answers, 3, 1), 'I like quiet evenings');
+
+  // For question 60 (Is there any answer...): legacy resolves key 64
+  assert.equal(resolveQuestionAnswer(legacyV1Answers, 60, 1), 'Private note to teacher');
+
+  // 4. Test resolveQuestionAnswer with Version 2 submission (keyed 1..60 directly)
+  const v2Answers: Record<number, string | string[]> = {
+    1: 'Kind, imaginative, quiet',
+    2: 'Playing badminton',
+    3: 'I write poetry',
+    60: 'Everything answered',
+  };
+
+  assert.equal(resolveQuestionAnswer(v2Answers, 1, 2), 'Kind, imaginative, quiet');
+  assert.equal(resolveQuestionAnswer(v2Answers, 2, 2), 'Playing badminton');
+  assert.equal(resolveQuestionAnswer(v2Answers, 3, 2), 'I write poetry');
+  assert.equal(resolveQuestionAnswer(v2Answers, 60, 2), 'Everything answered');
+});
+
 
