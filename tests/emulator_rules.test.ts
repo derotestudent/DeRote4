@@ -27,7 +27,8 @@ import {
 } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
 
-export const DESIGNATED_ADMIN_UID = 'VIwgfF6Q2FTDPDQwkRECSjpwbc32';
+export const DESIGNATED_ADMIN_UID = '8BC9o5eFSPaqLBNA7WsZNrnP6yw1';
+export const PREVIOUS_ADMIN_UID = 'VIwgfF6Q2FTDPDQwkRECSjpwbc32';
 export const STUDENT_A_UID = 'student_uid_alice';
 export const STUDENT_B_UID = 'student_uid_bob';
 
@@ -43,7 +44,7 @@ export const EMULATOR_SUITE_SPEC = {
   testedContexts: [
     'Student A (authenticated as alice@derote.in, UID: student_uid_alice)',
     'Student B (authenticated as bob@derote.in, UID: student_uid_bob)',
-    'Designated Admin (authenticated as admin@derote.in, UID: VIwgfF6Q2FTDPDQwkRECSjpwbc32)',
+    'Designated Admin (authenticated as contact@derote.in, UID: 8BC9o5eFSPaqLBNA7WsZNrnP6yw1)',
     'Unauthenticated Visitor (no auth context)',
   ],
 };
@@ -114,7 +115,7 @@ async function runEmulatorTestSuite() {
     // -------------------------------------------------------------------------
     const aliceContext = testEnv.authenticatedContext(STUDENT_A_UID, { email: 'alice@derote.in' });
     const bobContext = testEnv.authenticatedContext(STUDENT_B_UID, { email: 'bob@derote.in' });
-    const adminContext = testEnv.authenticatedContext(DESIGNATED_ADMIN_UID, { email: 'admin@derote.in' });
+    const adminContext = testEnv.authenticatedContext(DESIGNATED_ADMIN_UID, { email: 'contact@derote.in' });
     const unauthContext = testEnv.unauthenticatedContext();
 
     const aliceDb = aliceContext.firestore();

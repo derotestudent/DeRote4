@@ -72,7 +72,7 @@ export interface AuthResult {
  * Designated Administrator UID (Phase 3 Sole Source of Administrator Identity).
  * The ONLY authorized administrator in the system.
  */
-export const DESIGNATED_ADMIN_UID = 'VIwgfF6Q2FTDPDQwkRECSjpwbc32';
+export const DESIGNATED_ADMIN_UID = '8BC9o5eFSPaqLBNA7WsZNrnP6yw1';
 
 // Clean legacy localStorage items containing plaintext passwords or fake credentials
 function cleanLegacyInsecureStorage(): void {
@@ -141,7 +141,7 @@ export function verifyAdminStatus(user: { uid: string } | null | undefined): boo
  * Builds an AdminAccount object from an authenticated Firebase User
  */
 export function buildAdminAccount(user: User): AdminAccount {
-  const email = user.email || 'admin@derote.in';
+  const email = user.email || 'contact@derote.in';
   const nameParts = (user.displayName || email.split('@')[0] || 'Admin').trim().split(/\s+/);
   const avatarText =
     nameParts.length > 1

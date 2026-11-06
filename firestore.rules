@@ -9,7 +9,7 @@ service cloud.firestore {
 
     // Designated administrator UID (Sole authorized administrator in the system)
     function adminUid() {
-      return 'VIwgfF6Q2FTDPDQwkRECSjpwbc32';
+      return '8BC9o5eFSPaqLBNA7WsZNrnP6yw1';
     }
 
     // User is authenticated via Firebase Authentication

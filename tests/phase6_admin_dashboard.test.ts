@@ -2,7 +2,7 @@
  * Phase 6 — Admin Dashboard Firebase Integration Automated Unit Test Suite
  *
  * Verifies:
- * 1. Administrator identity strictly restricted to 'VIwgfF6Q2FTDPDQwkRECSjpwbc32'
+ * 1. Administrator identity strictly restricted to '8BC9o5eFSPaqLBNA7WsZNrnP6yw1'
  * 2. Student attempting admin access is rejected
  * 3. Student isolation: Student cannot access other students' profiles, drafts, or submissions
  * 4. Admin query & filtering: search by name, email, institution, class
@@ -22,6 +22,7 @@ import { DESIGNATED_ADMIN_UID, verifyAdminStatus, buildAdminAccount } from '../s
 import {
   normalizeClassGrade,
   formatClassDisplay,
+  getReportTitle,
 } from '../src/services/studentAdminService';
 import { QUESTIONS, SECTIONS } from '../src/data/questionnaire';
 
@@ -35,10 +36,14 @@ beforeEach(() => {
 });
 
 test('1. Administrator identity: Solely DESIGNATED_ADMIN_UID qualifies as Admin', () => {
-  assert.equal(DESIGNATED_ADMIN_UID, 'VIwgfF6Q2FTDPDQwkRECSjpwbc32');
+  // New Admin identity: UID must be 8BC9o5eFSPaqLBNA7WsZNrnP6yw1
+  assert.equal(DESIGNATED_ADMIN_UID, '8BC9o5eFSPaqLBNA7WsZNrnP6yw1');
 
-  // Exact admin UID
-  assert.equal(verifyAdminStatus({ uid: 'VIwgfF6Q2FTDPDQwkRECSjpwbc32' }), true);
+  // Exact new admin UID receives Admin authorization
+  assert.equal(verifyAdminStatus({ uid: '8BC9o5eFSPaqLBNA7WsZNrnP6yw1' }), true);
+
+  // Previous admin UID no longer receives Admin authorization
+  assert.equal(verifyAdminStatus({ uid: 'VIwgfF6Q2FTDPDQwkRECSjpwbc32' }), false);
 
   // Random UIDs, student UIDs, or empty UIDs must be rejected
   assert.equal(verifyAdminStatus({ uid: 'student_123' }), false);
@@ -47,15 +52,15 @@ test('1. Administrator identity: Solely DESIGNATED_ADMIN_UID qualifies as Admin'
   assert.equal(verifyAdminStatus(null), false);
   assert.equal(verifyAdminStatus(undefined), false);
 
-  // Admin object build
+  // Admin object build with new email contact@derote.in
   const mockAdminUser = {
     uid: DESIGNATED_ADMIN_UID,
-    email: 'principal@derote.in',
+    email: 'contact@derote.in',
     displayName: 'Headmaster Academic',
   } as any;
   const adminAccount = buildAdminAccount(mockAdminUser);
-  assert.equal(adminAccount.id, DESIGNATED_ADMIN_UID);
-  assert.equal(adminAccount.email, 'principal@derote.in');
+  assert.equal(adminAccount.id, '8BC9o5eFSPaqLBNA7WsZNrnP6yw1');
+  assert.equal(adminAccount.email, 'contact@derote.in');
   assert.equal(adminAccount.fullName, 'Headmaster Academic');
 });
 
@@ -71,8 +76,12 @@ test('2. Student isolation: Students attempting Admin privileges are rejected', 
   const isSuperAdminA = studentA.uid === DESIGNATED_ADMIN_UID;
   assert.equal(isSuperAdminA, false);
 
-  // Even if a student crafts an email like "admin@derote.in", they are NOT admin without the UID
-  const impostorWithAdminEmail = { uid: 'random_attacker_uid', email: 'admin@derote.in' };
+  // Previous Admin UID is denied
+  const oldAdminContext = { uid: 'VIwgfF6Q2FTDPDQwkRECSjpwbc32', email: 'admin@derote.in' };
+  assert.equal(verifyAdminStatus(oldAdminContext), false);
+
+  // Even if an impostor crafts an email like "contact@derote.in", they are NOT admin without the UID
+  const impostorWithAdminEmail = { uid: 'random_attacker_uid', email: 'contact@derote.in' };
   assert.equal(verifyAdminStatus(impostorWithAdminEmail), false);
 });
 
@@ -490,3 +499,87 @@ test('13. Cache Isolation: Failed status lookups (Unable to Load) are NOT cached
   assert.equal(statusCache.student_fail?.status, 'In Progress');
   assert.equal(statusErrors.student_fail, undefined);
 });
+
+test('14. Context-Aware Print Report Titles: Generates correct title across views and filter states', () => {
+  // Case A: Default list view (no filters active)
+  const defaultListTitle = getReportTitle({
+    view: 'list',
+    classFilter: 'all',
+    statusFilter: 'all',
+    searchQuery: '',
+  });
+  assert.equal(defaultListTitle, 'ALL REGISTERED STUDENTS');
+
+  // Case B: Filter by class only
+  const class9Title = getReportTitle({
+    view: 'list',
+    classFilter: '9',
+    statusFilter: 'all',
+  });
+  assert.equal(class9Title, 'CLASS 9 — STUDENT LIST');
+
+  // Case C: Filter by status only
+  const submittedTitle = getReportTitle({
+    view: 'list',
+    classFilter: 'all',
+    statusFilter: 'Submitted',
+  });
+  assert.equal(submittedTitle, 'SUBMITTED STUDENTS');
+
+  // Case D: Filter by class and status combined
+  const class9SubmittedTitle = getReportTitle({
+    view: 'list',
+    classFilter: '9',
+    statusFilter: 'Submitted',
+  });
+  assert.equal(class9SubmittedTitle, 'CLASS 9 — SUBMITTED STUDENTS');
+
+  // Case E: Search query active
+  const searchTitle = getReportTitle({
+    view: 'list',
+    classFilter: 'all',
+    statusFilter: 'all',
+    searchQuery: 'Aarav',
+  });
+  assert.equal(searchTitle, 'SEARCH RESULTS — AARAV');
+
+  // Case F: Class + Status + Search combined
+  const combinedTitle = getReportTitle({
+    view: 'list',
+    classFilter: '10',
+    statusFilter: 'In Progress',
+    searchQuery: 'Sharma',
+  });
+  assert.equal(combinedTitle, 'CLASS 10 — IN PROGRESS STUDENTS — SEARCH RESULTS — SHARMA');
+
+  // Case G: Individual student detail view
+  const mockStudent = {
+    id: 'st_123',
+    fullName: 'Ananya Roy',
+    age: '16',
+    classGrade: '10',
+    schoolName: 'St. Xavier School',
+    status: 'Submitted' as const,
+    answeredCount: 64,
+    totalQuestions: 64,
+    answers: {},
+  };
+
+  const studentDetailTitle = getReportTitle({
+    view: 'detail',
+    student: mockStudent,
+    classFilter: '9', // Filters should NOT override individual student title
+    statusFilter: 'Not Started',
+  });
+  assert.equal(studentDetailTitle, 'STUDENT REPORT — ANANYA ROY');
+});
+
+test('15. Print Report Student Self-View Title: Formats properly for student dashboard', () => {
+  const studentDisplayName = 'Arjun Verma';
+  const reportTitle = `STUDENT REPORT — ${studentDisplayName.toUpperCase()}`;
+  assert.equal(reportTitle, 'STUDENT REPORT — ARJUN VERMA');
+
+  const fallbackTitle = `STUDENT REPORT — ${('Student' || 'STUDENT').toUpperCase()}`;
+  assert.equal(fallbackTitle, 'STUDENT REPORT — STUDENT');
+});
+

@@ -25,6 +25,7 @@ import {
   Mail,
   ChevronsLeft,
   ChevronsRight,
+  Printer,
 } from 'lucide-react';
 import {
   seedQuestionnaireToBackend,
@@ -42,7 +43,10 @@ import {
   updateStudentProfileByAdmin,
   formatClassDisplay,
   normalizeClassGrade,
+  getReportTitle,
 } from '../services/studentAdminService';
+import { executePrint } from '../utils/printHelper';
+import { PrintableReport } from '../components/PrintableReport';
 import {
   getCurrentAdmin,
   signOutAdmin,
@@ -538,6 +542,30 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
     }
   };
 
+  // Formatted date for print reports
+  const currentDateFormatted = useMemo(() => {
+    return new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }, []);
+
+  // Context-aware report title for list view vs individual student detail view
+  const reportTitle = useMemo(() => {
+    return getReportTitle({
+      view: selectedStudent ? 'detail' : 'list',
+      student: selectedStudent,
+      classFilter,
+      statusFilter,
+      searchQuery,
+    });
+  }, [selectedStudent, classFilter, statusFilter, searchQuery]);
+
+  const handlePrintReport = () => {
+    executePrint(reportTitle);
+  };
+
   if (!admin) {
     return null;
   }
@@ -680,6 +708,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     <ChevronRight className="w-4 h-4" />
                   </button>
 
+                  <button
+                    type="button"
+                    onClick={handlePrintReport}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#D5E4F3] bg-white text-[#062B50] text-xs font-bold hover:bg-[#F2F7FC] hover:border-[#0866C6] transition-colors cursor-pointer shadow-xs"
+                    title="Print student reflection report"
+                  >
+                    <Printer className="w-4 h-4 text-[#0866C6]" />
+                    <span>Print Report</span>
+                  </button>
                 </div>
               </div>
 
@@ -1059,6 +1096,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                   <p className="text-xs sm:text-sm text-[#5A6E85] mt-1">
                     Manage student registration details and inspect submitted self-discovery responses.
                   </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePrintReport}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#062B50] text-xs sm:text-sm font-bold hover:bg-[#F2F7FC] hover:border-[#0866C6] transition-colors shadow-xs cursor-pointer"
+                    title="Print student cohort report"
+                  >
+                    <Printer className="w-4 h-4 text-[#0866C6]" />
+                    <span>Print Report</span>
+                  </button>
                 </div>
               </div>
 
@@ -1655,6 +1704,35 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
           </div>
         </div>
       )}
+
+      {/* ============================================================== */}
+      {/* 5. PRINT-ONLY REPORT CONTAINER                                */}
+      {/* ============================================================== */}
+      <div className="hidden print:block w-full bg-white text-black">
+        {selectedStudent ? (
+          <PrintableReport
+            type="individual-student"
+            title={reportTitle}
+            student={{
+              fullName: selectedStudent.fullName,
+              age: selectedStudent.age,
+              classGrade: selectedStudent.classGrade,
+              schoolName: selectedStudent.schoolName,
+              status: selectedStudent.status,
+              submittedAt: selectedStudent.submittedAt,
+              answers: loadedAnswersData?.answers || selectedStudent.answers || {},
+            }}
+            date={currentDateFormatted}
+          />
+        ) : (
+          <PrintableReport
+            type="student-list"
+            title={reportTitle}
+            students={filteredStudents}
+            date={currentDateFormatted}
+          />
+        )}
+      </div>
 
     </div>
   );

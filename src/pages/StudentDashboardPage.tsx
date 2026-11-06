@@ -22,6 +22,7 @@ import {
   FileText,
   Loader2,
   Check,
+  Printer,
 } from 'lucide-react';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
 import {
@@ -40,6 +41,8 @@ import {
   StudentAnswers,
 } from '../services/api';
 import { SECTIONS, QUESTIONS } from '../data/questionnaire';
+import { executePrint } from '../utils/printHelper';
+import { PrintableReport } from '../components/PrintableReport';
 
 interface StudentDashboardPageProps {
   onNavigate: (route: string) => void;
@@ -271,6 +274,19 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
     : '—';
   const studentAge = student?.age || '—';
 
+  const currentDateFormatted = useMemo(() => {
+    return new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }, []);
+
+  const handlePrintReport = () => {
+    const title = `STUDENT REPORT — ${(studentDisplayName || 'STUDENT').toUpperCase()}`;
+    executePrint(title);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#F2F7FC]/80 via-white to-[#F4F8FD] text-[#102C46]">
       {/* Top Header Bar (No duplicate Edit Profile button here) */}
@@ -330,7 +346,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                   </p>
                 </div>
 
-                {/* Continue Questionnaire Action */}
+                {/* Continue Questionnaire & Print Actions */}
                 <div className="shrink-0 flex flex-col sm:flex-row md:flex-col gap-2">
                   <button
                     type="button"
@@ -339,6 +355,16 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                   >
                     <span>Continue Questionnaire</span>
                     <ArrowRight className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handlePrintReport}
+                    className="min-h-[42px] px-5 py-2 rounded-xl border border-[#CCE3FC] bg-white hover:bg-[#F2F7FC] text-[#062B50] text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center justify-center gap-2"
+                    title="Print draft reflection report"
+                  >
+                    <Printer className="w-4 h-4 text-[#0866C6]" />
+                    <span>Print Report</span>
                   </button>
                   <p className="text-[11px] text-[#8EA3B8] text-center md:text-right">
                     Takes you to the exact question you left off
@@ -507,8 +533,18 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                     </p>
                   </div>
 
-                  {/* Primary Action Button: View My Answers ONLY */}
-                  <div className="flex items-center shrink-0 w-full sm:w-auto">
+                  {/* Action Buttons: Print Report and View My Answers */}
+                  <div className="flex flex-col sm:flex-row items-center gap-2.5 shrink-0 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={handlePrintReport}
+                      className="w-full sm:w-auto min-h-[46px] px-5 py-2.5 rounded-xl border border-[#CCE3FC] bg-white hover:bg-[#F2F7FC] text-[#062B50] text-xs sm:text-sm font-bold transition-all shadow-xs cursor-pointer inline-flex items-center justify-center gap-2"
+                      title="Print your reflection report"
+                    >
+                      <Printer className="w-4 h-4 text-[#0866C6]" />
+                      <span>Print Report</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => handleOpenAnswersModal(1)}
@@ -668,6 +704,16 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrintReport}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#CCE3FC] bg-white hover:bg-[#F2F7FC] text-[#062B50] text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                  title="Print your reflection report"
+                >
+                  <Printer className="w-3.5 h-3.5 text-[#0866C6]" />
+                  <span className="hidden sm:inline">Print Report</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setShowAnswersModal(false)}
@@ -853,6 +899,25 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
           </div>
         </div>
       )}
+
+      {/* Dedicated Print Report Container */}
+      <div className="hidden print:block w-full bg-white text-black">
+        <PrintableReport
+          type="individual-student"
+          title={`STUDENT REPORT — ${(studentDisplayName || 'STUDENT').toUpperCase()}`}
+          student={{
+            fullName: studentDisplayName,
+            age: student?.age,
+            classGrade: student?.classGrade,
+            schoolName: student?.schoolName,
+            status: isCompleted ? 'Submitted' : 'In Progress',
+            submittedAt: submissionData?.submittedAt,
+            answers: allAnswers,
+          }}
+          date={currentDateFormatted}
+          isStudentSelfView={true}
+        />
+      </div>
     </div>
   );
 };

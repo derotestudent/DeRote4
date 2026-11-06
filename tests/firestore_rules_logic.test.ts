@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 // Constants under test
-const DESIGNATED_ADMIN_UID = 'VIwgfF6Q2FTDPDQwkRECSjpwbc32';
+const DESIGNATED_ADMIN_UID = '8BC9o5eFSPaqLBNA7WsZNrnP6yw1';
+const PREVIOUS_ADMIN_UID = 'VIwgfF6Q2FTDPDQwkRECSjpwbc32';
 const STUDENT_A_UID = 'student_uid_alice_123';
 const STUDENT_B_UID = 'student_uid_bob_456';
 
@@ -568,4 +569,11 @@ test('29. Admin attempting to modify student email: DENY (enforces email immutab
     email: 'attacker_controlled@malicious.org',
   };
   assert.equal(evaluateStudentUpdate(auth, STUDENT_A_UID, incomingTamperedEmail, existing), 'DENY');
+});
+
+test('30. Previous admin UID (VIwgfF6Q2FTDPDQwkRECSjpwbc32) no longer qualifies as admin: DENY', () => {
+  const oldAuth = { uid: PREVIOUS_ADMIN_UID, token: { email: 'admin@derote.in' } };
+  assert.equal(isAdmin(oldAuth), false);
+  assert.equal(evaluateStudentList(oldAuth), 'DENY');
+  assert.equal(evaluateStudentRead(oldAuth, STUDENT_A_UID), 'DENY');
 });

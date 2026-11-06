@@ -14,7 +14,10 @@ import {
   WifiOff,
   RefreshCw,
   Lock,
+  Printer,
 } from 'lucide-react';
+import { executePrint } from '../utils/printHelper';
+import { PrintableReport } from '../components/PrintableReport';
 import {
   INTRO,
   SECTIONS,
@@ -811,6 +814,18 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
               type="button"
+              onClick={() => {
+                const studentName = answers[1] ? String(answers[1]) : 'STUDENT';
+                executePrint(`STUDENT REPORT — ${studentName.toUpperCase()}`);
+              }}
+              className="w-full sm:w-auto min-h-[46px] px-6 py-3 bg-white border border-[#CCE3FC] text-[#062B50] hover:bg-[#F2F7FC] hover:border-[#0866C6] font-bold text-xs sm:text-sm rounded-xl cursor-pointer transition-all shadow-xs inline-flex items-center justify-center gap-2"
+              title="Print your reflection report"
+            >
+              <Printer className="w-4 h-4 text-[#0866C6]" />
+              <span>Print Report</span>
+            </button>
+            <button
+              type="button"
               onClick={() => onNavigate('/dashboard')}
               className="w-full sm:w-auto min-h-[46px] px-7 py-3 bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-sm sm:text-base rounded-xl cursor-pointer transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] inline-flex items-center justify-center gap-2"
             >
@@ -829,6 +844,29 @@ export const QuestionnairePage: React.FC<QuestionnairePageProps> = ({ onNavigate
           </div>
         </div>
       </main>
+
+      {/* Hidden print report container for completed questionnaire */}
+      <div className="hidden print:block w-full bg-white text-black">
+        <PrintableReport
+          type="individual-student"
+          title={`STUDENT REPORT — ${(answers[1] ? String(answers[1]) : 'STUDENT').toUpperCase()}`}
+          student={{
+            fullName: answers[1] ? String(answers[1]) : 'Student',
+            age: answers[2] ? String(answers[2]) : undefined,
+            classGrade: answers[3] ? String(answers[3]) : undefined,
+            schoolName: answers[4] ? String(answers[4]) : undefined,
+            status: 'Submitted',
+            submittedAt: new Date().toISOString(),
+            answers: answers,
+          }}
+          date={new Date().toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })}
+          isStudentSelfView={true}
+        />
+      </div>
     </div>
   );
 };
