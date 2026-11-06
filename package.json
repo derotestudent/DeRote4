@@ -4,11 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 3000 --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx --test tests/firestore_rules_logic.test.ts tests/phase5_questionnaire_persistence.test.ts tests/phase6_admin_dashboard.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
