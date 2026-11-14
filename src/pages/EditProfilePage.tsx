@@ -321,14 +321,6 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
                   className="w-full px-4 py-3 rounded-xl border border-[#E2EDF8] bg-[#F7FAFD] text-[#64778C] font-semibold text-sm sm:text-base cursor-not-allowed select-none"
                 />
               )}
-              <p className="text-[11px] text-[#8EA3B8] flex items-center gap-1.5 pl-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#0866C6]" />
-                <span>
-                  {isCompletionMode
-                    ? 'Name is verified and saved to your permanent academic record.'
-                    : 'Name is permanently recorded for your academic verification records.'}
-                </span>
-              </p>
             </div>
 
             {/* Field 2: Email (Account-bound, Read-only) */}
@@ -400,14 +392,6 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
                   className="w-full px-4 py-3 rounded-xl border border-[#E2EDF8] bg-[#F7FAFD] text-[#64778C] font-semibold text-sm sm:text-base cursor-not-allowed select-none shadow-none"
                 />
               )}
-              <p className="text-[11px] text-[#8EA3B8] flex items-center gap-1.5 pl-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#0866C6]" />
-                <span>
-                  {isCompletionMode
-                    ? 'Enter the full name of your school, college, or educational institution.'
-                    : 'Institution is fixed by school administrative coordination.'}
-                </span>
-              </p>
             </div>
 
             {/* Field 4: Age */}
@@ -435,9 +419,6 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
                 className="w-full px-4 py-3 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] font-semibold text-sm sm:text-base focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/15 outline-none transition-all"
                 required
               />
-              <p className="text-[11px] text-[#5A6E85] pl-1">
-                Enter your current age between 8 and 25 years.
-              </p>
             </div>
 
             {/* Field 5: Class Grade */}
@@ -472,9 +453,6 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
                   );
                 })}
               </div>
-              <p className="text-[11px] text-[#5A6E85] pl-1">
-                Select your current grade level (8th through 12th, or Higher).
-              </p>
             </div>
 
             {/* Reassurance Callout Box */}
