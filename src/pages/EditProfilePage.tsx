@@ -13,6 +13,10 @@ import {
   LogOut,
   Sparkles,
   Loader2,
+  KeyRound,
+  Mail,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { DeRoteWordmark } from '../components/DeRoteWordmark';
 import {
@@ -22,9 +26,14 @@ import {
   completeStudentProfile,
   isStudentProfileComplete,
   logoutStudent,
+  getCurrentUserProviders,
+  onProviderStateChange,
+  linkPasswordToGoogleAccount,
   LocalStudentAccount,
+  LinkedProvidersState,
   KNOWN_PLACEHOLDER_SCHOOLS,
 } from '../services/localAuth';
+import { validatePasswordSetup } from '../services/authProviderUtils';
 import { auth } from '../services/firebase';
 
 interface EditProfilePageProps {
@@ -54,11 +63,28 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isSigningOut, setIsSigningOut] = useState<boolean>(false);
 
+  // Account Settings & Sign-In Provider Linking state
+  const [providers, setProviders] = useState<LinkedProvidersState>(() => getCurrentUserProviders());
+  const [showPasswordSetupForm, setShowPasswordSetupForm] = useState<boolean>(false);
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState<string>('');
+  const [showNewPassword, setShowNewPassword] = useState<boolean>(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState<boolean>(false);
+  const [isLinkingPassword, setIsLinkingPassword] = useState<boolean>(false);
+  const [passwordLinkSuccess, setPasswordLinkSuccess] = useState<string | null>(null);
+  const [passwordLinkError, setPasswordLinkError] = useState<string | null>(null);
+
   useEffect(() => {
     const unsub = onLocalAuthChange((curr) => {
       setStudent(curr);
     });
-    return () => unsub();
+    const unsubProviders = onProviderStateChange((nextProviders) => {
+      setProviders(nextProviders);
+    });
+    return () => {
+      unsub();
+      unsubProviders();
+    };
   }, []);
 
   // Hydrate fields from authenticated session
@@ -182,7 +208,47 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
     }
   };
 
-  const authEmail = student?.email || auth.currentUser?.email || '';
+  const handleLinkPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordLinkError(null);
+    setPasswordLinkSuccess(null);
+
+    const validation = validatePasswordSetup(newPassword, confirmNewPassword);
+    if (!validation.valid) {
+      setPasswordLinkError(validation.error || 'Please check your password details.');
+      return;
+    }
+
+    setIsLinkingPassword(true);
+    try {
+      const outcome = await linkPasswordToGoogleAccount(newPassword, confirmNewPassword);
+      if (outcome.success) {
+        if (outcome.providers) {
+          setProviders(outcome.providers);
+        }
+        setNewPassword('');
+        setConfirmNewPassword('');
+        setShowPasswordSetupForm(false);
+        setPasswordLinkSuccess(
+          outcome.message ||
+            'Password set up successfully! You can now sign in with either Google or your Email & Password.'
+        );
+      } else {
+        if (outcome.providers) {
+          setProviders(outcome.providers);
+        }
+        setPasswordLinkError(
+          outcome.error || 'Could not set up password for your account. Please try again.'
+        );
+      }
+    } catch {
+      setPasswordLinkError('An unexpected error occurred while linking your password.');
+    } finally {
+      setIsLinkingPassword(false);
+    }
+  };
+
+  const authEmail = auth.currentUser?.email || student?.email || '';
 
   // If no authenticated user exists, invite them to sign in
   if (!student && !auth.currentUser) {
@@ -245,7 +311,7 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-2xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12">
+      <main className="flex-1 max-w-2xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-6">
         <div className="bg-white rounded-3xl border border-[#E2EDF8] p-6 sm:p-10 shadow-sm space-y-6">
           {/* Header Title */}
           <div className="border-b border-[#E8F3FF] pb-5">
@@ -510,6 +576,256 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
             </div>
           </form>
         </div>
+
+        {/* Account Settings & Sign-In Methods (Only shown in Edit / Account Settings mode) */}
+        {!isCompletionMode && (
+          <section
+            aria-labelledby="account-settings-heading"
+            className="bg-white rounded-3xl border border-[#E2EDF8] p-6 sm:p-10 shadow-sm space-y-6"
+          >
+            <div className="border-b border-[#E8F3FF] pb-5">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#EBF4FE] text-[#0866C6] text-xs font-bold mb-2">
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>Account Settings</span>
+              </div>
+              <h2
+                id="account-settings-heading"
+                className="text-xl sm:text-2xl font-extrabold text-[#062B50] tracking-tight"
+              >
+                Sign-In Methods
+              </h2>
+              <p className="text-xs sm:text-sm text-[#5A6E85] mt-1.5 leading-relaxed">
+                Manage how you sign in to your DeRote student account. All your saved reflections and profile details stay connected to the same account.
+              </p>
+            </div>
+
+            {passwordLinkSuccess && (
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm flex items-start gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                <p className="font-semibold leading-relaxed">{passwordLinkSuccess}</p>
+              </div>
+            )}
+
+            {passwordLinkError && (
+              <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm flex items-start gap-2.5">
+                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <p className="font-semibold leading-relaxed">{passwordLinkError}</p>
+              </div>
+            )}
+
+            <div className="space-y-3.5">
+              {/* Google Sign-In Status Row */}
+              <div className="p-4 rounded-2xl border border-[#E2EDF8] bg-[#F8FAFD] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-white border border-[#D5E4F3] flex items-center justify-center shrink-0">
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        fill="#4285F4"
+                        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.98 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                      />
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-[#062B50]">Google Sign-In</p>
+                    <p className="text-xs text-[#5A6E85] truncate">
+                      {providers.hasGoogle
+                        ? authEmail || 'Connected via Google Account'
+                        : 'Not connected to Google Sign-In'}
+                    </p>
+                  </div>
+                </div>
+
+                {providers.hasGoogle ? (
+                  <span className="inline-flex items-center gap-1.5 self-start sm:self-auto px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold shrink-0">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Connected</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center self-start sm:self-auto px-3 py-1 rounded-full bg-[#F2F5F8] border border-[#E2EDF8] text-[#64778C] text-xs font-semibold shrink-0">
+                    Not Linked
+                  </span>
+                )}
+              </div>
+
+              {/* Email & Password Status / Set Up Password Row */}
+              <div className="p-4 rounded-2xl border border-[#E2EDF8] bg-[#F8FAFD] space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-white border border-[#D5E4F3] text-[#0866C6] flex items-center justify-center shrink-0">
+                      <Mail className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-[#062B50]">Email &amp; Password</p>
+                      <p className="text-xs text-[#5A6E85] leading-relaxed">
+                        {providers.hasPassword
+                          ? `Enabled for ${authEmail || 'your verified email'}.`
+                          : providers.canSetUpPassword
+                          ? `Set up a password so you can also sign in using ${authEmail || 'your email'}.`
+                          : 'Email & password sign-in status for your account.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {providers.hasPassword ? (
+                    <span className="inline-flex items-center gap-1.5 self-start sm:self-auto px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold shrink-0">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Email / Password Enabled</span>
+                    </span>
+                  ) : providers.canSetUpPassword && !showPasswordSetupForm ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPasswordLinkError(null);
+                        setPasswordLinkSuccess(null);
+                        setShowPasswordSetupForm(true);
+                      }}
+                      className="self-start sm:self-auto min-h-[40px] px-4 py-2 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shrink-0"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>Set Up Password</span>
+                    </button>
+                  ) : null}
+                </div>
+
+                {/* Inline Password Setup Form for Google-only users */}
+                {providers.canSetUpPassword && showPasswordSetupForm && (
+                  <form
+                    onSubmit={handleLinkPasswordSubmit}
+                    className="pt-4 border-t border-[#E2EDF8] space-y-4"
+                  >
+                    <div className="p-3 rounded-xl bg-white border border-[#E2EDF8] flex items-center justify-between gap-2 text-xs">
+                      <div className="min-w-0">
+                        <span className="text-[#64778C] font-semibold">Verified Account Email: </span>
+                        <span className="font-bold text-[#062B50] break-all">{authEmail}</span>
+                      </div>
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8EA3B8] bg-[#F2F5F8] px-2 py-0.5 rounded-md shrink-0">
+                        <Lock className="w-3 h-3" />
+                        <span>Fixed</span>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label
+                          htmlFor="link-new-password"
+                          className="block text-xs font-bold text-[#062B50] mb-1.5"
+                        >
+                          New Password
+                        </label>
+                        <div className="relative">
+                          <Lock className="w-4 h-4 text-[#64778C] absolute left-3.5 top-3.5" />
+                          <input
+                            id="link-new-password"
+                            type={showNewPassword ? 'text' : 'password'}
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            disabled={isLinkingPassword}
+                            required
+                            minLength={6}
+                            autoComplete="new-password"
+                            placeholder="Minimum 6 characters"
+                            className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] focus:border-[#0866C6] focus:outline-none transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword((prev) => !prev)}
+                            className="absolute right-3 top-3 text-[#64778C] hover:text-[#062B50] cursor-pointer"
+                            aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                          >
+                            {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="link-confirm-password"
+                          className="block text-xs font-bold text-[#062B50] mb-1.5"
+                        >
+                          Confirm Password
+                        </label>
+                        <div className="relative">
+                          <Lock className="w-4 h-4 text-[#64778C] absolute left-3.5 top-3.5" />
+                          <input
+                            id="link-confirm-password"
+                            type={showConfirmNewPassword ? 'text' : 'password'}
+                            value={confirmNewPassword}
+                            onChange={(e) => setConfirmNewPassword(e.target.value)}
+                            disabled={isLinkingPassword}
+                            required
+                            minLength={6}
+                            autoComplete="new-password"
+                            placeholder="Re-enter password"
+                            className="w-full text-sm pl-10 pr-10 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#102C46] focus:border-[#0866C6] focus:outline-none transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmNewPassword((prev) => !prev)}
+                            className="absolute right-3 top-3 text-[#64778C] hover:text-[#062B50] cursor-pointer"
+                            aria-label={
+                              showConfirmNewPassword ? 'Hide confirm password' : 'Show confirm password'
+                            }
+                          >
+                            {showConfirmNewPassword ? (
+                              <EyeOff className="w-4 h-4" />
+                            ) : (
+                              <Eye className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowPasswordSetupForm(false);
+                          setNewPassword('');
+                          setConfirmNewPassword('');
+                          setPasswordLinkError(null);
+                        }}
+                        disabled={isLinkingPassword}
+                        className="w-full sm:w-auto min-h-[42px] px-5 py-2 rounded-xl border border-[#D5E4F3] bg-white text-[#64778C] hover:text-[#062B50] hover:bg-[#F2F7FC] text-xs font-bold transition-all cursor-pointer disabled:opacity-60"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isLinkingPassword}
+                        className="w-full sm:w-auto min-h-[42px] px-6 py-2 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center gap-2 disabled:opacity-60"
+                      >
+                        {isLinkingPassword ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Linking Password...</span>
+                          </>
+                        ) : (
+                          <>
+                            <KeyRound className="w-4 h-4" />
+                            <span>Save Password</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

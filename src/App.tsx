@@ -108,7 +108,7 @@ function AppContent() {
 
     if (match('/complete-profile')) return '/complete-profile';
     if (match('/dashboard')) return '/dashboard';
-    if (match('/profile/edit') || match('/edit-profile')) return '/profile/edit';
+    if (match('/profile/edit') || match('/edit-profile') || match('/account-settings')) return '/profile/edit';
     if (match('/signup')) return '/signup';
     if (match('/login')) return '/login';
     if (match('/admin')) return '/admin';
@@ -160,7 +160,7 @@ function AppContent() {
 
       if (match('/complete-profile')) setRoute('/complete-profile');
       else if (match('/dashboard')) setRoute('/dashboard');
-      else if (match('/profile/edit') || match('/edit-profile')) setRoute('/profile/edit');
+      else if (match('/profile/edit') || match('/edit-profile') || match('/account-settings')) setRoute('/profile/edit');
       else if (match('/signup')) setRoute('/signup');
       else if (match('/login')) setRoute('/login');
       else if (match('/admin')) setRoute('/admin');

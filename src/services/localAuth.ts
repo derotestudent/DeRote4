@@ -10,6 +10,9 @@
 
 import {
   type LocalStudentAccount,
+  type LinkedProvidersState,
+  type LinkPasswordOutcome,
+  type AuthResult,
   getCurrentStudent as getFirebaseCurrentStudent,
   onAuthChange,
   signOutStudent,
@@ -20,15 +23,26 @@ import {
   signInStudentWithEmail,
   signInStudentWithGoogle,
   registerStudentWithEmail,
+  linkPasswordToGoogleAccount,
+  getCurrentUserProviders,
+  onProviderStateChange,
   isStudentProfileComplete,
   KNOWN_PLACEHOLDER_SCHOOLS,
 } from './firebaseAuth';
 
-export type { LocalStudentAccount };
+export type {
+  LocalStudentAccount,
+  LinkedProvidersState,
+  LinkPasswordOutcome,
+  AuthResult,
+};
 export {
   signInStudentWithEmail,
   signInStudentWithGoogle,
   registerStudentWithEmail,
+  linkPasswordToGoogleAccount,
+  getCurrentUserProviders,
+  onProviderStateChange,
   isStudentProfileComplete,
   KNOWN_PLACEHOLDER_SCHOOLS,
 };

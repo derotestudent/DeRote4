@@ -15,6 +15,10 @@ import {
   createUserWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
+  EmailAuthProvider,
+  linkWithCredential,
+  reauthenticateWithPopup,
+  fetchSignInMethodsForEmail,
   signOut as fbSignOut,
   onAuthStateChanged,
   updateProfile,
@@ -31,8 +35,18 @@ import {
   isStudentProfileComplete,
   KNOWN_PLACEHOLDER_SCHOOLS,
 } from './firestoreBackend';
+import {
+  DUPLICATE_EMAIL_ERROR_MESSAGE,
+  getLinkedProvidersState,
+  resolveEmailLoginFailureGuidance,
+  hashEmailForHint,
+  executePasswordCredentialLink,
+  type LinkedProvidersState,
+  type LinkPasswordOutcome,
+} from './authProviderUtils';
 
 export { isStudentProfileComplete, KNOWN_PLACEHOLDER_SCHOOLS };
+export type { LinkedProvidersState, LinkPasswordOutcome };
 
 export interface LocalStudentAccount {
   id: string; // Stable Firebase Auth UID
@@ -66,6 +80,7 @@ export interface AuthResult {
   error?: string;
   errorCode?: string;
   domain?: string;
+  suggestGoogleSignIn?: boolean;
 }
 
 /**
@@ -98,14 +113,66 @@ function cleanLegacyInsecureStorage(): void {
 
 cleanLegacyInsecureStorage();
 
+// Non-PII provider capability hints derived strictly from Firebase Auth providerData
+const PROVIDER_HINTS_STORAGE_KEY = 'derote_provider_hints_v1';
+const memoryProviderHints = new Map<string, { g: boolean; p: boolean }>();
+
+function recordKnownProviders(email: string | null | undefined, state: LinkedProvidersState): void {
+  const clean = (email || '').trim().toLowerCase();
+  if (!clean || (!state.hasGoogle && !state.hasPassword)) return;
+  const key = hashEmailForHint(clean);
+  const val = { g: state.hasGoogle, p: state.hasPassword };
+  memoryProviderHints.set(key, val);
+
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(PROVIDER_HINTS_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, { g?: boolean; p?: boolean }>) : {};
+    const next = parsed && typeof parsed === 'object' ? parsed : {};
+    next[key] = val;
+    localStorage.setItem(PROVIDER_HINTS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Ignore storage quota / privacy mode failures
+  }
+}
+
+function getKnownProvidersForEmail(email: string): { hasGoogle: boolean; hasPassword: boolean } | null {
+  const clean = email.trim().toLowerCase();
+  if (!clean) return null;
+  const key = hashEmailForHint(clean);
+  const mem = memoryProviderHints.get(key);
+  if (mem) {
+    return { hasGoogle: Boolean(mem.g), hasPassword: Boolean(mem.p) };
+  }
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(PROVIDER_HINTS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, { g?: boolean; p?: boolean }>;
+    const entry = parsed?.[key];
+    if (!entry) return null;
+    return { hasGoogle: Boolean(entry.g), hasPassword: Boolean(entry.p) };
+  } catch {
+    return null;
+  }
+}
+
+function recordKnownProvidersForUser(user: User): LinkedProvidersState {
+  const state = getLinkedProvidersState(user.providerData);
+  recordKnownProviders(user.email, state);
+  return state;
+}
+
 // Safe in-memory session cache populated directly by onAuthStateChanged
 let activeStudent: LocalStudentAccount | null = null;
 let activeAdmin: AdminAccount | null = null;
+let activeProviders: LinkedProvidersState = getLinkedProvidersState(null);
 let authReady = false;
 let firestoreAuthError: { code: string; message: string } | null = null;
 
 const studentListeners = new Set<(student: LocalStudentAccount | null, isReady: boolean) => void>();
 const adminListeners = new Set<(admin: AdminAccount | null, isReady: boolean) => void>();
+const providerListeners = new Set<(providers: LinkedProvidersState) => void>();
 
 function notifyStudentListeners(): void {
   studentListeners.forEach((listener) => {
@@ -123,6 +190,16 @@ function notifyAdminListeners(): void {
       listener(activeAdmin, authReady);
     } catch (err) {
       console.error('Admin auth listener error:', err);
+    }
+  });
+}
+
+function notifyProviderListeners(): void {
+  providerListeners.forEach((listener) => {
+    try {
+      listener(activeProviders);
+    } catch (err) {
+      console.error('Provider state listener error:', err);
     }
   });
 }
@@ -248,6 +325,9 @@ onAuthStateChanged(auth, async (firebaseUser: User | null) => {
   firestoreAuthError = null;
 
   if (firebaseUser) {
+    activeProviders = recordKnownProvidersForUser(firebaseUser);
+    notifyProviderListeners();
+
     try {
       // 1. Check if user is the designated Admin or authorized administrator
       const isAdmin = await verifyAdminStatus(firebaseUser);
@@ -291,6 +371,8 @@ onAuthStateChanged(auth, async (firebaseUser: User | null) => {
   } else {
     activeStudent = null;
     activeAdmin = null;
+    activeProviders = getLinkedProvidersState(null);
+    notifyProviderListeners();
   }
 
   authReady = true;
@@ -325,9 +407,17 @@ export function getFriendlyErrorMessage(err: unknown): string {
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
     case 'auth/email-already-in-use':
-      return 'An account already exists with this email address. Please sign in instead.';
+      return DUPLICATE_EMAIL_ERROR_MESSAGE;
     case 'auth/weak-password':
       return 'Password should be at least 6 characters long.';
+    case 'auth/requires-recent-login':
+      return 'For security reasons, please re-confirm your Google sign-in before setting up a password.';
+    case 'auth/provider-already-linked':
+      return 'Email & Password sign-in is already enabled for this account.';
+    case 'auth/credential-already-in-use':
+      return 'This email credential is already associated with another account.';
+    case 'auth/user-mismatch':
+      return 'The selected Google account does not match your signed-in account. Please select the same Google account.';
     case 'auth/popup-closed-by-user':
       return 'Google sign-in popup was closed before completing.';
     case 'auth/cancelled-popup-request':
@@ -372,6 +462,8 @@ export async function signInStudentWithEmail(
 
   try {
     const cred: UserCredential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+    activeProviders = recordKnownProvidersForUser(cred.user);
+    notifyProviderListeners();
 
     const isAdmin = await verifyAdminStatus(cred.user);
     if (isAdmin) {
@@ -402,7 +494,33 @@ export async function signInStudentWithEmail(
       requiresProfileCompletion: !resolution.isComplete,
     };
   } catch (fbErr: unknown) {
-    const code = (fbErr as { code?: string })?.code;
+    const code = (fbErr as { code?: string })?.code || '';
+
+    if (
+      code === 'auth/invalid-credential' ||
+      code === 'auth/wrong-password' ||
+      code === 'auth/user-not-found'
+    ) {
+      let signInMethods: string[] = [];
+      try {
+        signInMethods = await fetchSignInMethodsForEmail(auth, cleanEmail);
+      } catch {
+        // Email Enumeration Protection may restrict or return []
+      }
+      const knownProviders = getKnownProvidersForEmail(cleanEmail);
+      const guidance = resolveEmailLoginFailureGuidance({
+        errorCode: code,
+        signInMethods,
+        knownProviders,
+      });
+      return {
+        success: false,
+        errorCode: guidance.errorCode,
+        error: guidance.message,
+        suggestGoogleSignIn: guidance.suggestGoogleSignIn,
+      };
+    }
+
     return {
       success: false,
       errorCode: code,
@@ -443,6 +561,9 @@ export async function signInStudentWithGoogle(): Promise<AuthResult> {
         error: 'Unable to retrieve email from your Google account.',
       };
     }
+
+    activeProviders = recordKnownProvidersForUser(user);
+    notifyProviderListeners();
 
     // Check if user is an Administrator
     const isAdmin = await verifyAdminStatus(user);
@@ -512,6 +633,9 @@ export async function registerStudentWithEmail(
     const cred: UserCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
     await updateProfile(cred.user, { displayName: cleanName });
 
+    activeProviders = recordKnownProvidersForUser(cred.user);
+    notifyProviderListeners();
+
     const now = new Date().toISOString();
     // Incomplete draft: MUST complete age, class, and school on onboarding screen
     const newStudent: LocalStudentAccount = {
@@ -539,6 +663,14 @@ export async function registerStudentWithEmail(
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code;
     console.error('Registration failed:', err);
+    if (code === 'auth/email-already-in-use') {
+      return {
+        success: false,
+        errorCode: code,
+        error: DUPLICATE_EMAIL_ERROR_MESSAGE,
+        suggestGoogleSignIn: true,
+      };
+    }
     return {
       success: false,
       errorCode: code,
@@ -775,6 +907,55 @@ export function isAuthenticationReady(): boolean {
 
 export function getFirestoreAuthError(): { code: string; message: string } | null {
   return firestoreAuthError;
+}
+
+export function getCurrentUserProviders(): LinkedProvidersState {
+  if (auth.currentUser) {
+    return getLinkedProvidersState(auth.currentUser.providerData);
+  }
+  return activeProviders;
+}
+
+export function onProviderStateChange(
+  callback: (providers: LinkedProvidersState) => void
+): () => void {
+  providerListeners.add(callback);
+  callback(getCurrentUserProviders());
+
+  return () => {
+    providerListeners.delete(callback);
+  };
+}
+
+/**
+ * Links an Email & Password credential to the currently authenticated Google user
+ * without creating a new Firebase account or changing UID/records.
+ */
+export async function linkPasswordToGoogleAccount(
+  newPassword: string,
+  confirmPassword: string
+): Promise<LinkPasswordOutcome> {
+  return executePasswordCredentialLink(newPassword, confirmPassword, {
+    getCurrentUser: () => auth.currentUser,
+    createEmailCredential: (email, password) => EmailAuthProvider.credential(email, password),
+    linkCredential: async (user, credential) => {
+      await linkWithCredential(user as User, credential);
+    },
+    reauthenticateWithGoogle: async (user, email) => {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({
+        prompt: 'select_account',
+        login_hint: email,
+      });
+      await reauthenticateWithPopup(user as User, provider);
+    },
+    onProvidersUpdated: (email, providers) => {
+      activeProviders = providers;
+      recordKnownProviders(email, providers);
+      notifyProviderListeners();
+    },
+    mapErrorMessage: getFriendlyErrorMessage,
+  });
 }
 
 /**

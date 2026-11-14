@@ -55,6 +55,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [statusMessage, setStatusMessage] = useState<{
     type: 'error' | 'success';
     text: string;
+    suggestGoogleSignIn?: boolean;
+    showSwitchToSignIn?: boolean;
   } | null>(null);
 
   const handleRedirect = (res?: { student?: LocalStudentAccount; requiresProfileCompletion?: boolean }) => {
@@ -107,6 +109,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         setStatusMessage({
           type: 'error',
           text: res.error || 'Invalid credentials. Please verify your details.',
+          suggestGoogleSignIn: Boolean(res.suggestGoogleSignIn),
         });
       }
     } catch {
@@ -199,6 +202,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         setStatusMessage({
           type: 'error',
           text: res.error || 'Could not create account. Please check your details.',
+          suggestGoogleSignIn: Boolean(res.suggestGoogleSignIn || res.errorCode === 'auth/email-already-in-use'),
+          showSwitchToSignIn: res.errorCode === 'auth/email-already-in-use',
         });
       }
     } catch {
@@ -283,6 +288,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           {/* Status Feedback Message */}
           {statusMessage && (
             <div
+              role="alert"
               className={`mb-6 p-4 rounded-2xl text-xs sm:text-sm flex items-start gap-2.5 ${
                 statusMessage.type === 'error'
                   ? 'bg-red-50 text-red-700 border border-red-200'
@@ -294,7 +300,40 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               ) : (
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
               )}
-              <span>{statusMessage.text}</span>
+              <div className="flex-1 space-y-2.5">
+                <p className="leading-relaxed font-medium">{statusMessage.text}</p>
+                {statusMessage.type === 'error' &&
+                  (statusMessage.suggestGoogleSignIn || statusMessage.showSwitchToSignIn) && (
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                      {statusMessage.suggestGoogleSignIn && (
+                        <button
+                          type="button"
+                          onClick={handleGoogleSignIn}
+                          disabled={isLoading || isGoogleLoading}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-red-200 text-[#062B50] hover:border-[#0866C6]/40 hover:bg-[#F8FAFD] text-xs font-bold transition-colors cursor-pointer disabled:opacity-60"
+                        >
+                          <span>Continue with Google</span>
+                        </button>
+                      )}
+                      {statusMessage.showSwitchToSignIn && mode === 'signup' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (signupEmail.trim()) {
+                              setSignInEmail(signupEmail.trim());
+                            }
+                            setMode('login');
+                            setStatusMessage(null);
+                          }}
+                          disabled={isLoading || isGoogleLoading}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0866C6] hover:bg-[#062B50] text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-60"
+                        >
+                          <span>Go to Sign In</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+              </div>
             </div>
           )}
 
@@ -411,12 +450,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           {mode === 'login' ? (
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">
+                <label htmlFor="signin-email-input" className="block text-xs font-bold text-[#062B50] mb-1.5">
                   Email
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-[#64778C] absolute left-3.5 top-3.5" />
                   <input
+                    id="signin-email-input"
                     type="email"
                     value={signInEmail}
                     onChange={(e) => setSignInEmail(e.target.value)}
@@ -430,12 +470,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">
+                <label htmlFor="signin-password-input" className="block text-xs font-bold text-[#062B50] mb-1.5">
                   Password
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-[#64778C] absolute left-3.5 top-3.5" />
                   <input
+                    id="signin-password-input"
                     type={showSignInPassword ? 'text' : 'password'}
                     value={signInPassword}
                     onChange={(e) => setSignInPassword(e.target.value)}
@@ -477,12 +518,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             /* Mode 2: Create Account Form */
             <form onSubmit={handleSignupSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">
+                <label htmlFor="signup-name-input" className="block text-xs font-bold text-[#062B50] mb-1.5">
                   Full Name
                 </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-[#64778C] absolute left-3.5 top-3.5" />
                   <input
+                    id="signup-name-input"
                     type="text"
                     value={signupName}
                     onChange={(e) => setSignupName(e.target.value)}
@@ -496,12 +538,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">
+                <label htmlFor="signup-email-input" className="block text-xs font-bold text-[#062B50] mb-1.5">
                   Email Address
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-[#64778C] absolute left-3.5 top-3.5" />
                   <input
+                    id="signup-email-input"
                     type="email"
                     value={signupEmail}
                     onChange={(e) => setSignupEmail(e.target.value)}
@@ -515,12 +558,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">
+                <label htmlFor="signup-password-input" className="block text-xs font-bold text-[#062B50] mb-1.5">
                   Password
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-[#64778C] absolute left-3.5 top-3.5" />
                   <input
+                    id="signup-password-input"
                     type={showSignupPassword ? 'text' : 'password'}
                     value={signupPassword}
                     onChange={(e) => setSignupPassword(e.target.value)}
@@ -543,12 +587,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-[#062B50] mb-1.5">
+                <label htmlFor="signup-confirm-password-input" className="block text-xs font-bold text-[#062B50] mb-1.5">
                   Confirm Password
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-[#64778C] absolute left-3.5 top-3.5" />
                   <input
+                    id="signup-confirm-password-input"
                     type={showConfirmPassword ? 'text' : 'password'}
                     value={signupConfirmPassword}
                     onChange={(e) => setSignupConfirmPassword(e.target.value)}
