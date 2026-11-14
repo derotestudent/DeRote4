@@ -66,7 +66,7 @@ export interface CohortAnalytics {
 export const PRIMARY_ADMIN_UID = DESIGNATED_ADMIN_UID;
 
 /**
- * Helper to generate a realistic sample completed questionnaire session
+ * Helper to generate an initial empty questionnaire session
  */
 function createSampleCompletedSession(student: LocalStudentAccount): QuestionnaireSession {
   const answers: Record<string, any> = {};
@@ -86,8 +86,8 @@ function createSampleCompletedSession(student: LocalStudentAccount): Questionnai
     studentId: student.id,
     version: 'v1_classes_8_10',
     status: student.completedReflections ? 'submitted' : 'draft',
-    currentQuestionIndex: student.completedReflections ? QUESTION_BANK.length : 3,
-    answers,
+    currentQuestionIndex: 0,
+    answers: {},
     createdAt: student.createdAt,
     updatedAt: student.lastLoginAt,
     submittedAt: student.completedReflections ? student.lastLoginAt : undefined,
@@ -116,7 +116,7 @@ export async function fetchAllStudentAdminRecords(): Promise<StudentAdminRecord[
     }
 
     if (!session) {
-      session = createSampleCompletedSession(student);
+      session = createEmptySession(student);
     }
 
     const answers = session.answers || {};
