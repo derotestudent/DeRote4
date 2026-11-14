@@ -19,6 +19,26 @@
     -webkit-text-fill-color: #102C46 !important;
     transition: background-color 5000s ease-in-out 0s;
   }
+
+  button,
+  [role="button"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    button:not(:disabled),
+    [role="button"]:not([aria-disabled="true"]) {
+      transition-property: scale, transform, color, background-color, border-color, opacity;
+      transition-duration: 90ms;
+      transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    button:not(:disabled):active,
+    [role="button"]:not([aria-disabled="true"]):active {
+      scale: 0.97;
+    }
+  }
 }
 
 /* On screen, hide the printable report area */

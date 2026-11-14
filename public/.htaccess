@@ -1,0 +1,47 @@
+# ==============================================================================
+# Hostinger & LiteSpeed / Apache SPA Routing Configuration
+# DeRote Student Insight System
+# ==============================================================================
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Do not rewrite if already requesting index.html
+  RewriteRule ^index\.html$ - [L]
+
+  # If the requested file, directory, or symlink exists, serve it directly
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d [OR]
+  RewriteCond %{REQUEST_FILENAME} -l
+  RewriteRule ^ - [L]
+
+  # For all SPA client routes (/admin, /dashboard, /login, /questionnaire, etc.),
+  # rewrite the request to index.html with HTTP 200 (internal rewrite)
+  RewriteRule . /index.html [L]
+</IfModule>
+
+# Prevent directory indexing
+<IfModule mod_autoindex.c>
+  Options -Indexes
+</IfModule>
+
+# Security Headers
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set X-XSS-Protection "1; mode=block"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+
+  # Prevent aggressive caching of the HTML entry point so new deployments reflect immediately
+  <Files "index.html">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </Files>
+
+  # Cache immutable fingerprinted assets (JS, CSS, images) for 1 year
+  <FilesMatch "\.(js|css|webp|png|jpg|jpeg|svg|woff2?|ttf|eot)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>

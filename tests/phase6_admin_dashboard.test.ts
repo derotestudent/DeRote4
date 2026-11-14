@@ -18,6 +18,8 @@
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { DESIGNATED_ADMIN_UID, verifyAdminStatus, buildAdminAccount } from '../src/services/firebaseAuth';
 import {
   normalizeClassGrade,
@@ -752,6 +754,37 @@ test('18. Questionnaire About Me Cleanup & Legacy Answer Resolution', () => {
   assert.equal(resolveQuestionAnswer(v2Answers, 2, 2), 'Playing badminton');
   assert.equal(resolveQuestionAnswer(v2Answers, 3, 2), 'I write poetry');
   assert.equal(resolveQuestionAnswer(v2Answers, 60, 2), 'Everything answered');
+});
+
+test('19. Admin Summary Cards Auto-Scroll: All 4 status cards trigger filter + smooth scroll to student list', () => {
+  const adminPagePath = path.resolve(process.cwd(), 'src/pages/AdminDashboardPage.tsx');
+  const source = fs.readFileSync(adminPagePath, 'utf8');
+
+  // All 4 card buttons must route through handleCardFilterClick
+  assert.ok(source.includes("onClick={() => handleCardFilterClick('all')}"));
+  assert.ok(source.includes("onClick={() => handleCardFilterClick('Submitted')}"));
+  assert.ok(source.includes("onClick={() => handleCardFilterClick('In Progress')}"));
+  assert.ok(source.includes("onClick={() => handleCardFilterClick('Not Started')}"));
+
+  // Card labels remain intact
+  assert.ok(source.includes('Total Students'));
+  assert.ok(source.includes('Submitted'));
+  assert.ok(source.includes('In Progress'));
+  assert.ok(source.includes('Not Started'));
+
+  // Handler resets pagination to page 1 and invokes scrollToStudentList()
+  assert.ok(source.includes('setCurrentPage(1);'));
+  assert.ok(source.includes('scrollToStudentList();'));
+
+  // Scroll helper respects reduced motion and scrolls studentListRef into view after frame commit
+  assert.ok(source.includes('const studentListRef = useRef<HTMLDivElement | null>(null);'));
+  assert.ok(source.includes('window.requestAnimationFrame'));
+  assert.ok(source.includes('studentListRef.current?.scrollIntoView'));
+  assert.ok(source.includes("prefers-reduced-motion: reduce"));
+
+  // Student list table container attaches the ref with sticky-header scroll margin
+  assert.ok(source.includes('ref={studentListRef}'));
+  assert.ok(source.includes('scroll-mt-24'));
 });
 
 

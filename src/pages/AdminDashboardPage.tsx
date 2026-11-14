@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Search,
   RotateCcw,
@@ -76,6 +76,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(15);
+
+  // Target ref for auto-scrolling from top summary cards to the student list
+  const studentListRef = useRef<HTMLDivElement | null>(null);
 
   // Status cache for visible batch: strictly holds successful statuses ('Submitted', 'In Progress', 'Not Started')
   const [statusCache, setStatusCache] = useState<
@@ -196,6 +199,20 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
     return statusCache[s.id]?.status || s.status;
   };
 
+  // Smoothly scroll to the student list below after React commits filtered state
+  const scrollToStudentList = () => {
+    if (typeof window === 'undefined') return;
+    const prefersReducedMotion =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.requestAnimationFrame(() => {
+      studentListRef.current?.scrollIntoView({
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+        block: 'start',
+      });
+    });
+  };
+
   // Interactive summary card filter click handler
   const handleCardFilterClick = (targetStatus: 'all' | 'Submitted' | 'In Progress' | 'Not Started') => {
     if (targetStatus === 'all') {
@@ -206,6 +223,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
     } else {
       setStatusFilter(targetStatus);
     }
+    setCurrentPage(1);
+    scrollToStudentList();
   };
 
   // Load student records
@@ -1179,7 +1198,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                       : 'bg-white border border-[#E8F3FF] hover:border-[#0866C6]/40 hover:bg-[#F8FAFD] shadow-xs'
                   }`}
                   aria-pressed={statusFilter === 'all'}
-                  title="Click to view all registered students"
+                  title="Click to view and scroll to all registered students"
                 >
                   <div className="flex items-center justify-between text-xs font-semibold text-[#64778C] mb-2">
                     <span className="flex items-center gap-1.5 font-bold">
@@ -1219,7 +1238,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                       : 'bg-white border border-[#E8F3FF] hover:border-emerald-500/40 hover:bg-[#F6FBF8] shadow-xs'
                   }`}
                   aria-pressed={statusFilter === 'Submitted'}
-                  title={statusFilter === 'Submitted' ? 'Click to show all students' : 'Click to filter by submitted students'}
+                  title={statusFilter === 'Submitted' ? 'Click to show all students and scroll to list' : 'Click to filter and scroll to submitted students'}
                 >
                   <div className="flex items-center justify-between text-xs font-semibold text-emerald-800 mb-2">
                     <span className="flex items-center gap-1.5 font-bold">
@@ -1259,7 +1278,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                       : 'bg-white border border-[#E8F3FF] hover:border-amber-500/40 hover:bg-[#FDFBF7] shadow-xs'
                   }`}
                   aria-pressed={statusFilter === 'In Progress'}
-                  title={statusFilter === 'In Progress' ? 'Click to show all students' : 'Click to filter by in-progress students'}
+                  title={statusFilter === 'In Progress' ? 'Click to show all students and scroll to list' : 'Click to filter and scroll to in-progress students'}
                 >
                   <div className="flex items-center justify-between text-xs font-semibold text-amber-800 mb-2">
                     <span className="flex items-center gap-1.5 font-bold">
@@ -1299,7 +1318,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                       : 'bg-white border border-[#E8F3FF] hover:border-slate-400 hover:bg-[#F8FAFD] shadow-xs'
                   }`}
                   aria-pressed={statusFilter === 'Not Started'}
-                  title={statusFilter === 'Not Started' ? 'Click to show all students' : 'Click to filter by not-started students'}
+                  title={statusFilter === 'Not Started' ? 'Click to show all students and scroll to list' : 'Click to filter and scroll to not-started students'}
                 >
                   <div className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-2">
                     <span className="flex items-center gap-1.5 font-bold">
@@ -1622,7 +1641,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
               </div>
 
               {/* Student List Table */}
-              <div className="bg-white rounded-3xl border border-[#E8F3FF] shadow-xs overflow-hidden">
+              <div
+                ref={studentListRef}
+                className="bg-white rounded-3xl border border-[#E8F3FF] shadow-xs overflow-hidden scroll-mt-24"
+              >
                 {filteredStudents.length === 0 ? (
                   <div className="p-12 text-center text-[#64778C]">
                     <Search className="w-10 h-10 mx-auto text-[#0866C6] opacity-30 mb-3" />

@@ -3,20 +3,23 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-test('1. Reminder category tabs and counts match reminder data exactly', () => {
+test('1. Reminder filter buttons removed while keeping all 7 reminder cards', () => {
   const filePath = path.resolve('src/pages/StudentDashboardPage.tsx');
   const content = fs.readFileSync(filePath, 'utf8');
 
-  // Verify REMINDER_TABS definition
-  assert.ok(content.includes("const REMINDER_TABS = ["), 'REMINDER_TABS must be defined');
-  assert.ok(content.includes("{ id: 'all', label: 'All', count: 7 }"), 'All tab must have count 7');
-  assert.ok(content.includes("{ id: 'mindset', label: 'Mindset', count: 3 }"), 'Mindset tab must have count 3');
-  assert.ok(content.includes("{ id: 'growth', label: 'Curiosity & Growth', count: 2 }"), 'Growth tab must have count 2');
-  assert.ok(content.includes("{ id: 'wellbeing', label: 'Well-being', count: 1 }"), 'Wellbeing tab must have count 1');
-  assert.ok(content.includes("{ id: 'connection', label: 'Friendship', count: 1 }"), 'Friendship tab must have count 1');
+  // Verify category filter tabs were removed
+  assert.ok(!content.includes('REMINDER_TABS'), 'REMINDER_TABS filter buttons must be removed');
+  assert.ok(!content.includes('activeReminderTab'), 'activeReminderTab filter state must be removed');
+
+  // Verify all 7 reminder cards are rendered directly
+  assert.ok(content.includes('{REMINDERS.map((card) => {'), 'All reminder cards must be rendered directly from REMINDERS');
+  const reminderIds = ['rem_1', 'rem_2', 'rem_3', 'rem_4', 'rem_5', 'rem_6', 'rem_7'];
+  for (const id of reminderIds) {
+    assert.ok(content.includes(`id: '${id}'`), `Reminder card ${id} must remain present`);
+  }
 });
 
-test('2. Mobile layout spacing and touch targets for tabs and cards', () => {
+test('2. Mobile layout spacing for reminder cards and modal tabs', () => {
   const filePath = path.resolve('src/pages/StudentDashboardPage.tsx');
   const content = fs.readFileSync(filePath, 'utf8');
 
@@ -24,18 +27,6 @@ test('2. Mobile layout spacing and touch targets for tabs and cards', () => {
   assert.ok(
     content.includes('rounded-2xl sm:rounded-3xl border border-[#CCE3FC] p-4 sm:p-8'),
     'Reminders container must have responsive padding p-4 sm:p-8'
-  );
-
-  // Verify tab container edge-to-edge mobile scroll with negative margins
-  assert.ok(
-    content.includes('-mx-4 px-4 sm:mx-0 sm:px-0 flex items-center gap-2 sm:gap-2.5 overflow-x-auto'),
-    'Tabs must use negative margins -mx-4 px-4 and gap-2 sm:gap-2.5 for mobile horizontal scrolling'
-  );
-
-  // Verify tab buttons have at least 40px touch targets
-  assert.ok(
-    content.includes('min-h-[40px] px-3.5 sm:px-4 py-2 rounded-xl sm:rounded-2xl'),
-    'Tab buttons must have comfortable touch height min-h-[40px] and rounded-xl/2xl'
   );
 
   // Verify card grid spacing
@@ -71,13 +62,50 @@ test('3. React Rules of Hooks compliance in StudentDashboardPage', () => {
   const filePath = path.resolve('src/pages/StudentDashboardPage.tsx');
   const content = fs.readFileSync(filePath, 'utf8');
 
-  const filteredRemindersIndex = content.indexOf('const filteredReminders = useMemo');
+  const currentDateIndex = content.indexOf('const currentDateFormatted = useMemo');
   const isLoadingReturnIndex = content.indexOf('if (isLoading) {');
 
-  assert.ok(filteredRemindersIndex !== -1, 'filteredReminders hook must exist');
+  assert.ok(currentDateIndex !== -1, 'useMemo hooks must exist');
   assert.ok(isLoadingReturnIndex !== -1, 'isLoading guard must exist');
   assert.ok(
-    filteredRemindersIndex < isLoadingReturnIndex,
-    'filteredReminders hook MUST be declared before any conditional return'
+    currentDateIndex < isLoadingReturnIndex,
+    'All hooks MUST be declared before any conditional return'
+  );
+});
+
+test('4. Clean, fast GPU-composited button tap animation configured in index.css', () => {
+  const cssPath = path.resolve('src/index.css');
+  const cssContent = fs.readFileSync(cssPath, 'utf8');
+
+  assert.ok(cssContent.includes('touch-action: manipulation;'), 'Buttons must set touch-action: manipulation to eliminate mobile tap delay');
+  assert.ok(cssContent.includes('scale: 0.97;'), 'Buttons must apply subtle active tap scale animation');
+  assert.ok(cssContent.includes('transition-duration: 90ms;'), 'Tap animation must be crisp and fast (90ms)');
+});
+
+test('5. Student Profile Card uses compact icon Edit Profile button without Editable or Verified tags', () => {
+  const filePath = path.resolve('src/pages/StudentDashboardPage.tsx');
+  const content = fs.readFileSync(filePath, 'utf8');
+
+  assert.ok(content.includes('aria-label="Edit Profile"'), 'Icon-only Edit Profile button must expose aria-label');
+  assert.ok(!content.includes('<span>Edit Profile</span>'), 'Edit Profile text label must be removed in favor of compact pencil icon button');
+  assert.ok(!content.includes('Editable\n'), 'Editable badge must be removed from Age and Class cards');
+  assert.ok(!content.includes('Verified\n'), 'Verified badge must be removed from School / Institution card');
+});
+
+test('6. Incomplete Welcome Hero Card uses side-by-side actions and unified progress band', () => {
+  const filePath = path.resolve('src/pages/StudentDashboardPage.tsx');
+  const content = fs.readFileSync(filePath, 'utf8');
+
+  assert.ok(
+    content.includes('grid grid-cols-2 md:grid-cols-12 gap-y-4 gap-x-4 md:gap-6 items-center'),
+    'Progress band must arrange Questions Completed and Current Section side-by-side on mobile and inline on desktop'
+  );
+  assert.ok(
+    content.includes('flex items-center gap-2 sm:gap-2.5'),
+    'Continue Questionnaire and Print Report actions must sit cleanly side-by-side'
+  );
+  assert.ok(
+    content.includes('tabular-nums'),
+    'Progress metrics must use tabular-nums for clean alignment'
   );
 });

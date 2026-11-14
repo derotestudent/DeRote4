@@ -61,14 +61,6 @@ interface SimpleReminder {
   icon: React.ElementType;
 }
 
-const REMINDER_TABS = [
-  { id: 'all', label: 'All', count: 7 },
-  { id: 'mindset', label: 'Mindset', count: 3 },
-  { id: 'growth', label: 'Curiosity & Growth', count: 2 },
-  { id: 'wellbeing', label: 'Well-being', count: 1 },
-  { id: 'connection', label: 'Friendship', count: 1 },
-] as const;
-
 const REMINDERS: SimpleReminder[] = [
   {
     id: 'rem_1',
@@ -161,7 +153,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
   const [submissionData, setSubmissionData] = useState<SubmissionData | null>(null);
   const [allAnswers, setAllAnswers] = useState<StudentAnswers>({});
-  const [activeReminderTab, setActiveReminderTab] = useState<string>('all');
   const [progressData, setProgressData] = useState<{
     hasDraft: boolean;
     currentSection: number;
@@ -286,11 +277,6 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
     });
   }, []);
 
-  const filteredReminders = useMemo(() => {
-    if (activeReminderTab === 'all') return REMINDERS;
-    return REMINDERS.filter((r) => r.category === activeReminderTab);
-  }, [activeReminderTab]);
-
   const studentDisplayName = student?.fullName || 'Student';
   const studentSchool = student?.schoolName || '—';
   const studentClass = student?.classGrade
@@ -341,7 +327,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
             <button
               type="button"
               onClick={() => setShowSignoutModal(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-transparent hover:border-[#E2EDF8] text-xs font-semibold text-[#5A6E85] hover:text-red-600 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-transparent hover:border-[#E2EDF8] text-xs font-semibold text-[#5A6E85] hover:text-red-600 cursor-pointer"
               title="Sign Out"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -359,16 +345,17 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
         {!isCompleted && (
           <section className="space-y-6">
             {/* Incomplete Welcome Hero Card */}
-            <div className="bg-white rounded-3xl border border-[#CCE3FC] p-6 sm:p-8 shadow-sm relative overflow-hidden">
-              <div className="absolute top-0 right-0 -mr-16 -mt-16 w-56 h-56 rounded-full bg-gradient-to-br from-[#E8F3FF] to-transparent pointer-events-none" />
+            <div className="bg-white rounded-3xl border border-[#CCE3FC] shadow-sm relative overflow-hidden">
+              <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-gradient-to-br from-[#EBF4FE]/80 via-[#F4F9FF]/40 to-transparent pointer-events-none" />
 
-              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div className="space-y-2 max-w-2xl">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EBF4FE] text-[#0866C6] text-xs font-bold tracking-wide uppercase">
+              {/* Upper Hero Content + Action Row */}
+              <div className="relative z-10 p-5 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-5 lg:gap-8">
+                <div className="space-y-2 max-w-xl">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0866C6]">
                     <Clock className="w-3.5 h-3.5 text-[#0866C6]" />
-                    <span>Questionnaire In Progress</span>
+                    <span>Questionnaire in progress</span>
                   </div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight">
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight text-balance">
                     Welcome back, {studentDisplayName}!
                   </h1>
                   <p className="text-sm sm:text-base text-[#5A6E85] leading-relaxed">
@@ -377,73 +364,81 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                 </div>
 
                 {/* Continue Questionnaire & Print Actions */}
-                <div className="shrink-0 flex flex-col sm:flex-row md:flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={handleContinueQuestionnaire}
-                    className="min-h-[48px] px-8 py-3 rounded-2xl bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-sm sm:text-base transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] cursor-pointer inline-flex items-center justify-center gap-2"
-                  >
-                    <span>Continue Questionnaire</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                <div className="shrink-0 flex flex-col items-stretch sm:items-start lg:items-end gap-2">
+                  <div className="flex items-center gap-2 sm:gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleContinueQuestionnaire}
+                      className="flex-1 sm:flex-initial min-h-[44px] sm:min-h-[46px] px-4 sm:px-6 py-2.5 rounded-xl sm:rounded-2xl bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-[13px] sm:text-sm transition-all shadow-md shadow-[#0866C6]/20 active:scale-[0.98] cursor-pointer inline-flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap"
+                    >
+                      <span>Continue Questionnaire</span>
+                      <ArrowRight className="w-4 h-4 shrink-0" />
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={handlePrintReport}
-                    className="min-h-[42px] px-5 py-2 rounded-xl border border-[#CCE3FC] bg-white hover:bg-[#F2F7FC] text-[#062B50] text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center justify-center gap-2"
-                    title="Print draft reflection report"
-                  >
-                    <Printer className="w-4 h-4 text-[#0866C6]" />
-                    <span>Print Report</span>
-                  </button>
-                  <p className="text-[11px] text-[#8EA3B8] text-center md:text-right">
-                    Takes you to the exact question you left off
+                    <button
+                      type="button"
+                      onClick={handlePrintReport}
+                      className="min-h-[44px] sm:min-h-[46px] px-3 sm:px-4 py-2.5 rounded-xl sm:rounded-2xl border border-[#CCE3FC] bg-[#F8FAFD] hover:bg-[#EBF4FE] text-[#062B50] text-xs sm:text-sm font-semibold transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                      title="Print draft reflection report"
+                    >
+                      <Printer className="w-4 h-4 text-[#0866C6] shrink-0" />
+                      <span className="sm:hidden">Print</span>
+                      <span className="hidden sm:inline">Print Report</span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-[#64778C] lg:text-right">
+                    Takes you straight to the question where you paused
                   </p>
                 </div>
               </div>
 
-              {/* Progress Summary Box */}
-              <div className="mt-6 pt-6 border-t border-[#E8F3FF] grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8]">
-                  <p className="text-xs font-bold text-[#5A6E85] uppercase tracking-wider">
-                    Questions Completed
-                  </p>
-                  <p className="text-xl sm:text-2xl font-extrabold text-[#062B50] mt-1">
-                    {progressData?.answeredCount || 0}{' '}
-                    <span className="text-xs font-medium text-[#8EA3B8]">
-                      of {progressData?.totalQuestions || QUESTIONS.length}
-                    </span>
-                  </p>
-                </div>
+              {/* Unified Seamless Progress Band */}
+              <div className="relative z-10 bg-[#F8FAFD]/80 border-t border-[#E8F3FF] px-5 sm:px-8 py-4 sm:py-5">
+                <div className="grid grid-cols-2 md:grid-cols-12 gap-y-4 gap-x-4 md:gap-6 items-center">
+                  {/* Questions Completed */}
+                  <div className="md:col-span-3 min-w-0">
+                    <p className="text-xs font-medium text-[#64778C]">
+                      Questions completed
+                    </p>
+                    <p className="text-lg sm:text-xl font-extrabold text-[#062B50] mt-0.5 tabular-nums">
+                      {progressData?.answeredCount || 0}{' '}
+                      <span className="text-xs font-medium text-[#64778C]">
+                        of {progressData?.totalQuestions || QUESTIONS.length}
+                      </span>
+                    </p>
+                  </div>
 
-                <div className="p-4 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8]">
-                  <p className="text-xs font-bold text-[#5A6E85] uppercase tracking-wider">
-                    Current Section
-                  </p>
-                  <p className="text-base sm:text-lg font-bold text-[#062B50] mt-1 truncate">
-                    Section {progressData?.currentSection || 1}
-                  </p>
-                  <p className="text-xs text-[#5A6E85] truncate">
-                    {progressData?.sectionTitle || 'About Me'}
-                  </p>
-                </div>
+                  {/* Current Section */}
+                  <div className="md:col-span-4 min-w-0 pl-3 border-l border-[#E2EDF8] md:pl-6">
+                    <p className="text-xs font-medium text-[#64778C]">
+                      Current section
+                    </p>
+                    <p className="text-sm sm:text-base font-bold text-[#062B50] mt-0.5 truncate tabular-nums">
+                      Section {progressData?.currentSection || 1}
+                    </p>
+                    <p className="text-xs text-[#5A6E85] truncate">
+                      {progressData?.sectionTitle || 'About Me'}
+                    </p>
+                  </div>
 
-                <div className="p-4 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between text-xs font-bold text-[#5A6E85]">
-                      <span>OVERALL PROGRESS</span>
-                      <span className="text-[#0866C6]">{progressData?.progressPercent || 0}%</span>
+                  {/* Overall Progress Bar */}
+                  <div className="col-span-2 md:col-span-5 pt-3 border-t border-[#E8F3FF] md:pt-0 md:border-t-0 md:border-l md:border-[#E2EDF8] md:pl-6">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-[#64778C]">Overall progress</span>
+                      <span className="font-extrabold text-[#0866C6] tabular-nums">
+                        {progressData?.progressPercent || 0}%
+                      </span>
                     </div>
                     <div className="w-full bg-[#E2EDF8] rounded-full h-2 mt-2 overflow-hidden">
                       <div
                         className="bg-[#0866C6] h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${progressData?.progressPercent || 5}%` }}
+                        style={{ width: `${Math.max(progressData?.progressPercent || 0, 4)}%` }}
                       />
                     </div>
+                    <p className="text-[11px] text-[#64778C] mt-1.5">
+                      Leave any time and your progress stays safe
+                    </p>
                   </div>
-                  <p className="text-[11px] text-[#8EA3B8] mt-2">
-                    Leave any time and your progress stays safe
-                  </p>
                 </div>
               </div>
             </div>
@@ -473,10 +468,11 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                 <button
                   type="button"
                   onClick={() => onNavigate('/profile/edit')}
-                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-[#CCE3FC] bg-[#F2F7FC] hover:bg-[#0866C6] text-[#0866C6] hover:text-white text-xs font-bold transition-all inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 shadow-2xs"
+                  aria-label="Edit Profile"
+                  title="Edit Profile"
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-[#CCE3FC] bg-[#F2F7FC] hover:bg-[#0866C6] text-[#0866C6] hover:text-white transition-all inline-flex items-center justify-center shrink-0 cursor-pointer active:scale-95 shadow-2xs"
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>Edit Profile</span>
+                  <Edit3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               </div>
 
@@ -484,14 +480,9 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
               <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
                 {/* Age */}
                 <div className="p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C] mb-1">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Age</span>
-                    </span>
-                    <span className="text-[10px] font-semibold text-[#0866C6] bg-[#EBF4FE] px-1.5 py-0.5 rounded">
-                      Editable
-                    </span>
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-[#64778C] mb-1">
+                    <Calendar className="w-3.5 h-3.5 text-[#0866C6]" />
+                    <span>Age</span>
                   </div>
                   <div className="text-sm sm:text-base font-bold text-[#062B50] mt-0.5">
                     {studentAge} years old
@@ -500,14 +491,9 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
 
                 {/* Class / Grade */}
                 <div className="p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C] mb-1">
-                    <span className="flex items-center gap-1">
-                      <BookOpen className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Class</span>
-                    </span>
-                    <span className="text-[10px] font-semibold text-[#0866C6] bg-[#EBF4FE] px-1.5 py-0.5 rounded">
-                      Editable
-                    </span>
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-[#64778C] mb-1">
+                    <BookOpen className="w-3.5 h-3.5 text-[#0866C6]" />
+                    <span>Class</span>
                   </div>
                   <div className="text-sm sm:text-base font-bold text-[#062B50] mt-0.5">
                     {studentClass}
@@ -516,15 +502,9 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
 
                 {/* School / Institution - Spans full width on mobile for long school names */}
                 <div className="col-span-2 p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C]">
-                    <span className="flex items-center gap-1">
-                      <School className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>School / Institution</span>
-                    </span>
-                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">
-                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                      Verified
-                    </span>
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-[#64778C]">
+                    <School className="w-3.5 h-3.5 text-[#0866C6]" />
+                    <span>School / Institution</span>
                   </div>
                   <div className="text-xs sm:text-sm font-bold text-[#062B50] leading-snug break-words" title={studentSchool}>
                     {studentSchool}
@@ -613,10 +593,11 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                 <button
                   type="button"
                   onClick={() => onNavigate('/profile/edit')}
-                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl border border-[#CCE3FC] bg-[#F2F7FC] hover:bg-[#0866C6] text-[#0866C6] hover:text-white text-xs font-bold transition-all inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 shadow-2xs"
+                  aria-label="Edit Profile"
+                  title="Edit Profile"
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-[#CCE3FC] bg-[#F2F7FC] hover:bg-[#0866C6] text-[#0866C6] hover:text-white transition-all inline-flex items-center justify-center shrink-0 cursor-pointer active:scale-95 shadow-2xs"
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>Edit Profile</span>
+                  <Edit3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               </div>
 
@@ -624,14 +605,9 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
               <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
                 {/* Age */}
                 <div className="p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C] mb-1">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Age</span>
-                    </span>
-                    <span className="text-[10px] font-semibold text-[#0866C6] bg-[#EBF4FE] px-1.5 py-0.5 rounded">
-                      Editable
-                    </span>
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-[#64778C] mb-1">
+                    <Calendar className="w-3.5 h-3.5 text-[#0866C6]" />
+                    <span>Age</span>
                   </div>
                   <div className="text-sm sm:text-base font-bold text-[#062B50] mt-0.5">
                     {studentAge} years old
@@ -640,14 +616,9 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
 
                 {/* Class / Grade */}
                 <div className="p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C] mb-1">
-                    <span className="flex items-center gap-1">
-                      <BookOpen className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Class</span>
-                    </span>
-                    <span className="text-[10px] font-semibold text-[#0866C6] bg-[#EBF4FE] px-1.5 py-0.5 rounded">
-                      Editable
-                    </span>
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-[#64778C] mb-1">
+                    <BookOpen className="w-3.5 h-3.5 text-[#0866C6]" />
+                    <span>Class</span>
                   </div>
                   <div className="text-sm sm:text-base font-bold text-[#062B50] mt-0.5">
                     {studentClass}
@@ -656,15 +627,9 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
 
                 {/* School / Institution - Spans full width on mobile for long school names */}
                 <div className="col-span-2 p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFD] border border-[#E2EDF8] space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-[#64778C]">
-                    <span className="flex items-center gap-1">
-                      <School className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>School / Institution</span>
-                    </span>
-                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">
-                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                      Verified
-                    </span>
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-[#64778C]">
+                    <School className="w-3.5 h-3.5 text-[#0866C6]" />
+                    <span>School / Institution</span>
                   </div>
                   <div className="text-xs sm:text-sm font-bold text-[#062B50] leading-snug break-words" title={studentSchool}>
                     {studentSchool}
@@ -676,7 +641,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
         )}
 
         {/* ========================================================= */}
-        {/* SHORT, WARM REMINDERS WITH SPACED TABS & REFINED CARDS    */}
+        {/* SHORT, WARM REMINDERS WITH REFINED CARDS                  */}
         {/* ========================================================= */}
         <section className="bg-white rounded-2xl sm:rounded-3xl border border-[#CCE3FC] p-4 sm:p-8 shadow-sm space-y-5 sm:space-y-6">
           <div className="border-b border-[#E8F3FF] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2">
@@ -689,45 +654,13 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
               </p>
             </div>
             <span className="text-xs font-semibold text-[#0866C6] bg-[#EBF4FE] px-2.5 py-1 rounded-full self-start sm:self-auto">
-              {filteredReminders.length} {filteredReminders.length === 1 ? 'note' : 'notes'}
+              {REMINDERS.length} {REMINDERS.length === 1 ? 'note' : 'notes'}
             </span>
-          </div>
-
-          {/* Reminder Category Tabs with Touch-Friendly Mobile Spacing */}
-          <div>
-            <div className="-mx-4 px-4 sm:mx-0 sm:px-0 flex items-center gap-2 sm:gap-2.5 overflow-x-auto no-scrollbar scroll-smooth py-1">
-              {REMINDER_TABS.map((tab) => {
-                const isActive = activeReminderTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveReminderTab(tab.id)}
-                    className={`min-h-[40px] px-3.5 sm:px-4 py-2 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-150 flex items-center gap-1.5 shrink-0 select-none cursor-pointer ${
-                      isActive
-                        ? 'bg-[#0866C6] text-white shadow-sm shadow-[#0866C6]/25 ring-2 ring-[#0866C6]/30'
-                        : 'bg-[#F4F8FD] hover:bg-[#EAF2FC] text-[#4A5D73] hover:text-[#062B50] border border-[#CCE3FC]/60'
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    <span
-                      className={`text-[11px] px-1.5 py-0.5 rounded-full font-bold transition-colors ${
-                        isActive
-                          ? 'bg-white/20 text-white'
-                          : 'bg-[#E0EEFC] text-[#0866C6]'
-                      }`}
-                    >
-                      {tab.count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
           {/* Cards Grid: Nicely Spaced & Styled for Mobile & Desktop */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-5 pt-1">
-            {filteredReminders.map((card) => {
+            {REMINDERS.map((card) => {
               const IconComponent = card.icon;
               return (
                 <div
@@ -794,7 +727,7 @@ export const StudentDashboardPage: React.FC<StudentDashboardPageProps> = ({ onNa
                 <button
                   type="button"
                   onClick={() => setShowAnswersModal(false)}
-                  className="w-9 h-9 rounded-xl border border-[#D5E4F3] text-[#5A6E85] hover:text-[#062B50] hover:bg-[#F2F7FC] flex items-center justify-center transition-colors cursor-pointer"
+                  className="w-9 h-9 rounded-xl border border-[#D5E4F3] text-[#5A6E85] hover:text-[#062B50] hover:bg-[#F2F7FC] flex items-center justify-center cursor-pointer"
                   aria-label="Close answers modal"
                 >
                   <X className="w-5 h-5" />
