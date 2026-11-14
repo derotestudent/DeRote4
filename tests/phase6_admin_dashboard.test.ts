@@ -20,13 +20,25 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { DESIGNATED_ADMIN_UID, verifyAdminStatus, buildAdminAccount } from '../src/services/firebaseAuth';
 import {
+  type AdminStudentRecord,
   normalizeClassGrade,
   formatClassDisplay,
   getReportTitle,
 } from '../src/services/studentAdminService';
 import { QUESTIONS, SECTIONS, resolveQuestionAnswer } from '../src/data/questionnaire';
+import {
+  computeAdminSummaryCounts,
+  filterAndSortStudents,
+  getActiveFilterChips,
+  formatMobileStudentMeta,
+} from '../src/utils/adminDashboardUtils';
+import { AdminSummaryCards } from '../src/components/admin/AdminSummaryCards';
+import { AdminStudentList } from '../src/components/admin/AdminStudentList';
+import { AdminStudentDetail } from '../src/components/admin/AdminStudentDetail';
 
 // Mock storage
 const mockStorage: Record<string, string> = {};
@@ -757,34 +769,526 @@ test('18. Questionnaire About Me Cleanup & Legacy Answer Resolution', () => {
 });
 
 test('19. Admin Summary Cards Auto-Scroll: All 4 status cards trigger filter + smooth scroll to student list', () => {
-  const adminPagePath = path.resolve(process.cwd(), 'src/pages/AdminDashboardPage.tsx');
-  const source = fs.readFileSync(adminPagePath, 'utf8');
+  const adminPageSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/pages/AdminDashboardPage.tsx'),
+    'utf8'
+  );
+  const cardsSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/AdminSummaryCards.tsx'),
+    'utf8'
+  );
+  const listSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/AdminStudentList.tsx'),
+    'utf8'
+  );
 
-  // All 4 card buttons must route through handleCardFilterClick
-  assert.ok(source.includes("onClick={() => handleCardFilterClick('all')}"));
-  assert.ok(source.includes("onClick={() => handleCardFilterClick('Submitted')}"));
-  assert.ok(source.includes("onClick={() => handleCardFilterClick('In Progress')}"));
-  assert.ok(source.includes("onClick={() => handleCardFilterClick('Not Started')}"));
+  // All 4 card buttons must route through onCardClick / handleCardFilterClick
+  assert.ok(cardsSource.includes("onClick={() => onCardClick('all')}"));
+  assert.ok(cardsSource.includes("onClick={() => onCardClick('Submitted')}"));
+  assert.ok(cardsSource.includes("onClick={() => onCardClick('In Progress')}"));
+  assert.ok(cardsSource.includes("onClick={() => onCardClick('Not Started')}"));
+  assert.ok(adminPageSource.includes('onCardClick={handleCardFilterClick}'));
 
   // Card labels remain intact
-  assert.ok(source.includes('Total Students'));
-  assert.ok(source.includes('Submitted'));
-  assert.ok(source.includes('In Progress'));
-  assert.ok(source.includes('Not Started'));
+  assert.ok(cardsSource.includes('Total Students'));
+  assert.ok(cardsSource.includes('Submitted'));
+  assert.ok(cardsSource.includes('In Progress'));
+  assert.ok(cardsSource.includes('Not Started'));
 
   // Handler resets pagination to page 1 and invokes scrollToStudentList()
-  assert.ok(source.includes('setCurrentPage(1);'));
-  assert.ok(source.includes('scrollToStudentList();'));
+  assert.ok(adminPageSource.includes('setCurrentPage(1);'));
+  assert.ok(adminPageSource.includes('scrollToStudentList();'));
 
   // Scroll helper respects reduced motion and scrolls studentListRef into view after frame commit
-  assert.ok(source.includes('const studentListRef = useRef<HTMLDivElement | null>(null);'));
-  assert.ok(source.includes('window.requestAnimationFrame'));
-  assert.ok(source.includes('studentListRef.current?.scrollIntoView'));
-  assert.ok(source.includes("prefers-reduced-motion: reduce"));
+  assert.ok(adminPageSource.includes('const studentListRef = useRef<HTMLDivElement | null>(null);'));
+  assert.ok(adminPageSource.includes('window.requestAnimationFrame'));
+  assert.ok(adminPageSource.includes('studentListRef.current?.scrollIntoView'));
+  assert.ok(adminPageSource.includes('prefers-reduced-motion: reduce'));
 
-  // Student list table container attaches the ref with sticky-header scroll margin
-  assert.ok(source.includes('ref={studentListRef}'));
-  assert.ok(source.includes('scroll-mt-24'));
+  // Student list container attaches the ref with sticky-header scroll margin
+  assert.ok(listSource.includes('ref={studentListRef}'));
+  assert.ok(listSource.includes('scroll-mt-20'));
 });
+
+test('20. adminDashboardUtils: Summary metrics, multi-filter search, chips, and mobile metadata formatting', () => {
+  const sampleStudents: AdminStudentRecord[] = [
+    {
+      id: 's1',
+      fullName: 'Aarav Sharma',
+      age: '16',
+      classGrade: '10',
+      schoolName: 'Delhi Public School',
+      email: 'aarav.sharma.test@gmail.com',
+      status: 'Submitted',
+      answeredCount: 60,
+      totalQuestions: 60,
+      createdAt: '2026-03-01T10:00:00Z',
+      answers: {},
+    },
+    {
+      id: 's2',
+      fullName: 'Diya Patel',
+      age: '',
+      classGrade: '9',
+      schoolName: 'Greenwood High',
+      email: '',
+      status: 'In Progress',
+      answeredCount: 12,
+      totalQuestions: 60,
+      createdAt: '2026-04-01T10:00:00Z',
+      answers: {},
+    },
+    {
+      id: 's3',
+      fullName: 'Kabir Khan',
+      age: '17',
+      classGrade: '12',
+      schoolName: 'St. Xaviers Collegiate',
+      email: 'kabir@xaviers.edu',
+      status: 'Not Started',
+      answeredCount: 0,
+      totalQuestions: 60,
+      createdAt: '2026-02-01T10:00:00Z',
+      answers: {},
+    },
+  ];
+
+  const counts = computeAdminSummaryCounts(
+    sampleStudents,
+    { s2: { status: 'Submitted' } },
+    { s3: 'network-timeout' }
+  );
+  assert.deepEqual(counts, {
+    totalRegistered: 3,
+    totalSubmitted: 2,
+    totalInProgress: 0,
+    totalNotStarted: 0,
+    totalUnableToLoad: 1,
+  });
+
+  // Combined search + class + status filter
+  const filtered = filterAndSortStudents(
+    sampleStudents,
+    {
+      searchQuery: 'aarav',
+      classFilter: '10',
+      institutionFilter: 'Delhi Public School',
+      statusFilter: 'Submitted',
+      sortBy: 'name_asc',
+    },
+    {},
+    {}
+  );
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0].id, 's1');
+
+  // Active chips list
+  const chips = getActiveFilterChips({
+    searchQuery: '  Sharma ',
+    classFilter: '10',
+    institutionFilter: 'all',
+    statusFilter: 'Submitted',
+  });
+  assert.deepEqual(chips, [
+    { key: 'search', label: 'Search', valueLabel: '"Sharma"' },
+    { key: 'class', label: 'Class', valueLabel: 'Class 10' },
+    { key: 'status', label: 'Status', valueLabel: 'Submitted' },
+  ]);
+
+  // Mobile metadata omits unavailable age
+  assert.equal(formatMobileStudentMeta('10', '16'), 'Class 10 · Age 16');
+  assert.equal(formatMobileStudentMeta('9', ''), 'Class 9');
+  assert.equal(formatMobileStudentMeta('', ''), '');
+});
+
+test('21. AdminSummaryCards SSR: Renders compact cards without "Active Filter" pill badges', () => {
+  const html = renderToStaticMarkup(
+    React.createElement(AdminSummaryCards, {
+      statusFilter: 'Submitted',
+      totalRegistered: 42,
+      totalSubmitted: 18,
+      totalInProgress: 14,
+      totalNotStarted: 10,
+      onCardClick: () => {},
+    })
+  );
+
+  assert.ok(html.includes('Total Students'));
+  assert.ok(html.includes('Submitted'));
+  assert.ok(html.includes('In Progress'));
+  assert.ok(html.includes('Not Started'));
+  assert.ok(html.includes('42'));
+  assert.ok(html.includes('18'));
+  assert.ok(html.includes('14'));
+  assert.ok(html.includes('10'));
+  assert.equal(html.includes('Active Filter'), false);
+  assert.ok(html.includes('aria-pressed="true"'));
+  assert.ok(html.includes('tabular-nums'));
+});
+
+test('22. AdminStudentList SSR: Mobile cards omit missing fields and desktop table stays intact', () => {
+  const records: AdminStudentRecord[] = [
+    {
+      id: 'st_full',
+      fullName: 'Aarav Sharma',
+      age: '16',
+      classGrade: '10',
+      schoolName: 'Delhi Public School',
+      email: 'aarav.sharma.test@gmail.com',
+      status: 'Submitted',
+      answeredCount: 60,
+      totalQuestions: 60,
+      answers: {},
+    },
+    {
+      id: 'st_sparse',
+      fullName: 'Riya Verma',
+      age: '',
+      classGrade: '9',
+      schoolName: '',
+      email: '',
+      status: 'In Progress',
+      answeredCount: 8,
+      totalQuestions: 60,
+      answers: {},
+    },
+  ];
+
+  const html = renderToStaticMarkup(
+    React.createElement(AdminStudentList, {
+      studentListRef: { current: null },
+      filteredStudents: records,
+      paginatedStudents: records,
+      statusCache: {},
+      statusErrors: {},
+      retryingStatusIds: new Set<string>(),
+      currentPage: 1,
+      totalPages: 1,
+      pageSize: 15,
+      onSelectStudent: () => {},
+      onRetryStudentStatus: () => {},
+      onResetFilters: () => {},
+      onPageChange: () => {},
+      onPageSizeChange: () => {},
+    })
+  );
+
+  // Mobile card fields for full record
+  assert.ok(html.includes('Aarav Sharma'));
+  assert.ok(html.includes('aarav.sharma.test@gmail.com'));
+  assert.ok(html.includes('Class 10 · Age 16'));
+  assert.ok(html.includes('Delhi Public School'));
+  assert.ok(html.includes('View Student'));
+  assert.ok(html.includes('aria-label="View student Aarav Sharma"'));
+
+  // Sparse record omits unavailable Age and Institution in mobile card
+  assert.ok(html.includes('Riya Verma'));
+  assert.equal(html.includes('Age </p>'), false);
+  assert.equal(html.includes('Not specified'), false);
+
+  // Desktop table headers preserved
+  assert.ok(html.includes('Student Name'));
+  assert.ok(html.includes('Institution / School'));
+  assert.ok(html.includes('Rows per page:'));
+});
+
+test('23. AdminHeader & Roster UI Contracts: Compact header, three-dot menu sections, printer icon, and unified search', () => {
+  const headerSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/AdminHeader.tsx'),
+    'utf8'
+  );
+  const adminPageSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/pages/AdminDashboardPage.tsx'),
+    'utf8'
+  );
+
+  // Header preserves wordmark without Administration pill or header Logout button
+  assert.ok(headerSource.includes('<DeRoteWordmark showDescriptor={false} size="md" />'));
+  assert.ok(headerSource.includes('aria-label="Search students"'));
+  assert.ok(headerSource.includes('aria-label="Administration menu"'));
+
+  // Three-dot menu heading & section ordering: A. DASHBOARD -> Main Dashboard first, B. SYSTEM & BACKEND submenu, C. ACCOUNT -> Logout at bottom
+  assert.ok(headerSource.includes('ADMINISTRATION'));
+  assert.ok(headerSource.includes('Main Dashboard'));
+  assert.ok(headerSource.includes('System &amp; Backend'));
+  assert.ok(headerSource.includes('Firebase Backend'));
+  assert.ok(headerSource.includes('Refresh Data'));
+  assert.ok(headerSource.includes('Technical Controls'));
+  assert.ok(headerSource.includes('Sync Questionnaire to Backend'));
+  assert.ok(headerSource.includes('Logout'));
+
+  // Menu closes on Escape & outside click
+  assert.ok(headerSource.includes("event.key === 'Escape'"));
+  assert.ok(headerSource.includes("'mousedown'"));
+
+  // Menu order verification: Main Dashboard appears before System & Backend, which appears before Logout
+  const idxDashboard = headerSource.indexOf('Main Dashboard');
+  const idxSystem = headerSource.indexOf('System &amp; Backend');
+  const idxLogout = headerSource.indexOf('Logout');
+  assert.ok(idxDashboard > -1 && idxSystem > idxDashboard && idxLogout > idxSystem);
+
+  // Roster heading + icon-only printer button beside it + simplified filters (no duplicate search box or redundant status select)
+  assert.ok(adminPageSource.includes('Student Roster &amp; Questionnaire Records'));
+  assert.ok(adminPageSource.includes('aria-label="Print Report"'));
+  assert.ok(adminPageSource.includes('title="Print Report"'));
+  assert.ok(adminPageSource.includes('Clear All'));
+  assert.equal(adminPageSource.includes('Search by name, email, institution, or class...'), false);
+  assert.equal(adminPageSource.includes('<option value="all">All Statuses</option>'), false);
+});
+
+test('24. AdminStudentDetail SSR: Submitted student renders compact nav, icon-only controls, 7 profile fields, and all 12 sections / 60 questions', () => {
+  const longWrittenAnswer = 'Thoughtful reflection '.repeat(60); // > 1,200 chars untruncated
+  const fullAnswers: Record<number, string | string[]> = {
+    1: longWrittenAnswer,
+    4: 'I enjoy learning new things',
+    6: ['Mathematics', 'Computer / technology'],
+    60: 'I would like to explore project-based science further.',
+  };
+
+  const submittedStudent = {
+    id: 'st_sub_1',
+    fullName: 'Aarav Sharma',
+    age: '16',
+    classGrade: '10',
+    schoolName: 'Delhi Public School International Campus Sector 12 With A Very Long Institutional Name',
+    email: 'aarav.sharma.student.record@delhipublicschool.edu.in',
+    status: 'Submitted' as const,
+    answeredCount: 60,
+    totalQuestions: 60,
+    createdAt: '2026-02-14T10:00:00Z',
+    submittedAt: '2026-04-20T14:30:00Z',
+    answers: fullAnswers,
+    version: 2,
+  };
+
+  const html = renderToStaticMarkup(
+    React.createElement(AdminStudentDetail, {
+      selectedStudent: submittedStudent,
+      currentFilteredIndex: 0,
+      totalFilteredCount: 5,
+      hasPrevious: false,
+      hasNext: true,
+      isLoadingAnswers: false,
+      answersError: null,
+      isRetryingStatus: false,
+      onBackToList: () => {},
+      onPreviousStudent: () => {},
+      onNextStudent: () => {},
+      onPrintReport: () => {},
+      onOpenEditModal: () => {},
+      onRetryStatus: () => {},
+      onRetryAnswers: () => {},
+    })
+  );
+
+  // Navigation strip: subtle Back to Student List, compact index, icon-only Previous/Next
+  assert.ok(html.includes('Back to Student List'));
+  assert.ok(html.includes('1 of 5'));
+  assert.ok(html.includes('aria-label="Previous student"'));
+  assert.ok(html.includes('aria-label="Next student"'));
+
+  // Identity actions: icon-only Print Report + compact Edit Details (no large Edit Student Details button)
+  assert.ok(html.includes('aria-label="Print Report"'));
+  assert.ok(html.includes('title="Print Report"'));
+  assert.equal(html.includes('<span>Print Report</span>'), false);
+  assert.ok(html.includes('aria-label="Edit Details"'));
+  assert.equal(html.includes('Edit Student Details'), false);
+
+  // All 7 profile fields + full-width schoolName + graceful wrapping without truncate
+  assert.ok(html.includes('Full Name'));
+  assert.ok(html.includes('Email'));
+  assert.ok(html.includes('Age'));
+  assert.ok(html.includes('Class / Grade'));
+  assert.ok(html.includes('Institution / School'));
+  assert.ok(html.includes('col-span-2'));
+  assert.ok(html.includes('grid-cols-2 md:grid-cols-4'));
+  assert.ok(html.includes('Registration Date'));
+  assert.ok(html.includes('Submission Date'));
+  assert.ok(html.includes(submittedStudent.schoolName));
+  assert.ok(html.includes(submittedStudent.email));
+  assert.ok(html.includes('16 years'));
+  assert.ok(html.includes('Class 10'));
+
+  // Questionnaire Responses heading, count, all 12 sections & all 60 questions untruncated
+  assert.ok(html.includes('QUESTIONNAIRE RESPONSES'));
+  assert.ok(html.includes('60 of 60 questions answered'));
+  for (const sec of SECTIONS) {
+    assert.ok(html.includes(`SECTION ${sec.id}`), `Missing SECTION ${sec.id}`);
+  }
+  for (const q of QUESTIONS) {
+    assert.ok(html.includes(`Q${q.n}`), `Missing Q${q.n}`);
+  }
+  assert.ok(html.includes('WRITTEN RESPONSE'));
+  assert.ok(html.includes('SINGLE CHOICE'));
+  assert.ok(html.includes('MULTIPLE CHOICE'));
+  assert.ok(html.includes(longWrittenAnswer));
+  assert.ok(html.includes('I enjoy learning new things'));
+  assert.ok(html.includes('Mathematics'));
+  assert.ok(html.includes('Computer / technology'));
+  assert.ok(html.includes('No response provided'));
+});
+
+test('25. AdminStudentDetail SSR: In Progress, Not Started, and Unable to Load states render cleanly without clutter', () => {
+  // 1. In Progress student
+  const inProgressHtml = renderToStaticMarkup(
+    React.createElement(AdminStudentDetail, {
+      selectedStudent: {
+        id: 'st_prog_1',
+        fullName: 'Diya Patel',
+        age: '15',
+        classGrade: '9',
+        schoolName: 'Greenwood High',
+        email: 'diya@greenwood.org',
+        status: 'In Progress',
+        answeredCount: 2,
+        totalQuestions: 60,
+        answers: { 1: 'Creative, curious, kind', 2: 'Sketching' },
+      },
+      currentFilteredIndex: 1,
+      totalFilteredCount: 3,
+      hasPrevious: true,
+      hasNext: true,
+      isLoadingAnswers: false,
+      answersError: null,
+      isRetryingStatus: false,
+      onBackToList: () => {},
+      onPreviousStudent: () => {},
+      onNextStudent: () => {},
+      onPrintReport: () => {},
+      onOpenEditModal: () => {},
+      onRetryStatus: () => {},
+      onRetryAnswers: () => {},
+    })
+  );
+
+  assert.ok(inProgressHtml.includes('In Progress'));
+  assert.ok(inProgressHtml.includes('2 of 60 questions answered'));
+  assert.ok(inProgressHtml.includes('Showing saved draft responses.'));
+  assert.ok(inProgressHtml.includes('Creative, curious, kind'));
+  assert.ok(inProgressHtml.includes('No response provided'));
+
+  // 2. Not Started student -> clean unboxed empty state
+  const notStartedHtml = renderToStaticMarkup(
+    React.createElement(AdminStudentDetail, {
+      selectedStudent: {
+        id: 'st_ns_1',
+        fullName: 'Kabir Khan',
+        age: '',
+        classGrade: '11',
+        schoolName: 'St. Xaviers Collegiate',
+        email: '',
+        status: 'Not Started',
+        answeredCount: 0,
+        totalQuestions: 60,
+        answers: {},
+      },
+      currentFilteredIndex: 2,
+      totalFilteredCount: 3,
+      hasPrevious: true,
+      hasNext: false,
+      isLoadingAnswers: false,
+      answersError: null,
+      isRetryingStatus: false,
+      onBackToList: () => {},
+      onPreviousStudent: () => {},
+      onNextStudent: () => {},
+      onPrintReport: () => {},
+      onOpenEditModal: () => {},
+      onRetryStatus: () => {},
+      onRetryAnswers: () => {},
+    })
+  );
+
+  assert.ok(notStartedHtml.includes('Not Started'));
+  assert.ok(notStartedHtml.includes('Student Record ID: st_ns_1'));
+  assert.ok(notStartedHtml.includes('No responses recorded yet.'));
+  assert.ok(notStartedHtml.includes('0 of 60 questions answered.'));
+  assert.equal(notStartedHtml.includes('No Answers Saved Yet'), false);
+
+  // 3. Unable to Load student -> explicit retry action, never mislabeled Not Started
+  const errorHtml = renderToStaticMarkup(
+    React.createElement(AdminStudentDetail, {
+      selectedStudent: {
+        id: 'st_err_1',
+        fullName: 'Meera Rao',
+        age: '17',
+        classGrade: '12',
+        schoolName: 'Modern Academy',
+        email: 'meera@modern.edu',
+        status: 'Unable to Load',
+        answeredCount: 0,
+        totalQuestions: 60,
+        answers: {},
+      },
+      currentFilteredIndex: 0,
+      totalFilteredCount: 1,
+      hasPrevious: false,
+      hasNext: false,
+      isLoadingAnswers: false,
+      answersError: null,
+      statusError: 'permission-denied: check Firestore rules',
+      isRetryingStatus: false,
+      onBackToList: () => {},
+      onPreviousStudent: () => {},
+      onNextStudent: () => {},
+      onPrintReport: () => {},
+      onOpenEditModal: () => {},
+      onRetryStatus: () => {},
+      onRetryAnswers: () => {},
+    })
+  );
+
+  assert.ok(errorHtml.includes('Unable to Load'));
+  assert.ok(errorHtml.includes('permission-denied: check Firestore rules'));
+  assert.ok(errorHtml.includes('Retry Status Check'));
+  assert.ok(errorHtml.includes('Lookup Failed'));
+});
+
+test('26. AdminStudentDetail SSR: Legacy v1 64-question submission maps Q5..Q64 to Q1..Q60 cleanly', () => {
+  const legacyStudent = {
+    id: 'st_legacy_1',
+    fullName: 'Rohan Legacy',
+    age: '16',
+    classGrade: '11',
+    schoolName: 'Heritage School',
+    email: 'rohan@heritage.edu',
+    status: 'Submitted' as const,
+    answeredCount: 60,
+    totalQuestions: 60,
+    version: 1,
+    answers: {
+      1: 'Rohan Legacy', // legacy v1 profile slot -> must NOT render as Q1 answer!
+      2: '16',
+      3: '11',
+      4: 'Heritage School',
+      5: 'Curious, calm, analytical', // maps to Q1
+      64: 'Legacy final note', // maps to Q60
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    React.createElement(AdminStudentDetail, {
+      selectedStudent: legacyStudent,
+      currentFilteredIndex: 0,
+      totalFilteredCount: 1,
+      hasPrevious: false,
+      hasNext: false,
+      isLoadingAnswers: false,
+      answersError: null,
+      isRetryingStatus: false,
+      onBackToList: () => {},
+      onPreviousStudent: () => {},
+      onNextStudent: () => {},
+      onPrintReport: () => {},
+      onOpenEditModal: () => {},
+      onRetryStatus: () => {},
+      onRetryAnswers: () => {},
+    })
+  );
+
+  assert.ok(html.includes('Curious, calm, analytical'));
+  assert.ok(html.includes('Legacy final note'));
+});
+
 
 

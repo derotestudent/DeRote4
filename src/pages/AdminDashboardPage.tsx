@@ -1,40 +1,16 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  Search,
-  RotateCcw,
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  Edit3,
   CheckCircle2,
-  Clock,
   AlertCircle,
   X,
-  School,
-  User,
-  BookOpen,
-  LogOut,
-  Check,
-  Calendar,
-  ExternalLink,
-  Users,
-  Database,
-  UploadCloud,
-  RefreshCw,
-  Cloud,
-  Mail,
-  ChevronsLeft,
-  ChevronsRight,
   Printer,
-  ChevronDown,
 } from 'lucide-react';
 import {
   seedQuestionnaireToBackend,
   testFirestoreConnection,
   getStudentSubmissionStatus,
 } from '../services/firestoreBackend';
-import { DeRoteWordmark } from '../components/DeRoteWordmark';
-import { SECTIONS, QUESTIONS, Question, resolveQuestionAnswer } from '../data/questionnaire';
+import { SECTIONS, QUESTIONS } from '../data/questionnaire';
 import {
   AdminStudentRecord,
   QuestionnaireStatus,
@@ -42,7 +18,6 @@ import {
   fetchStudentAnswersForAdmin,
   resolveStudentBatchStatus,
   updateStudentProfileByAdmin,
-  formatClassDisplay,
   normalizeClassGrade,
   getReportTitle,
 } from '../services/studentAdminService';
@@ -54,6 +29,18 @@ import {
   onAdminAuthChange,
   AdminAccount,
 } from '../services/adminService';
+import { AdminHeader } from '../components/admin/AdminHeader';
+import { AdminSummaryCards } from '../components/admin/AdminSummaryCards';
+import { AdminStudentList } from '../components/admin/AdminStudentList';
+import { AdminStudentDetail } from '../components/admin/AdminStudentDetail';
+import {
+  type AdminClassFilter,
+  type AdminSortBy,
+  type AdminStatusFilter,
+  computeAdminSummaryCounts,
+  filterAndSortStudents,
+  getActiveFilterChips,
+} from '../utils/adminDashboardUtils';
 
 interface AdminDashboardPageProps {
   onNavigate: (route: string) => void;
@@ -68,10 +55,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
 
   // Filters & Search state
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [classFilter, setClassFilter] = useState<'all' | '8' | '9' | '10' | '11' | '12' | 'Higher' | 'Others'>('all');
+  const [classFilter, setClassFilter] = useState<AdminClassFilter>('all');
   const [institutionFilter, setInstitutionFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'Submitted' | 'In Progress' | 'Not Started' | 'Unable to Load'>('all');
-  const [sortBy, setSortBy] = useState<'name_asc' | 'name_desc' | 'date_desc' | 'date_asc'>('name_asc');
+  const [statusFilter, setStatusFilter] = useState<AdminStatusFilter>('all');
+  const [sortBy, setSortBy] = useState<AdminSortBy>('name_asc');
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -92,6 +79,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
   // Individual student on-demand answer loading state
   const [isLoadingAnswers, setIsLoadingAnswers] = useState<boolean>(false);
   const [answersError, setAnswersError] = useState<string | null>(null);
+  const [answersRetryNonce, setAnswersRetryNonce] = useState<number>(0);
   const [loadedAnswersData, setLoadedAnswersData] = useState<{
     status: QuestionnaireStatus;
     answers: Record<number, string | string[]>;
@@ -127,7 +115,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
   const [isSyncingQuestionnaire, setIsSyncingQuestionnaire] = useState<boolean>(false);
   const [isTestingPing, setIsTestingPing] = useState<boolean>(false);
   const [backendPingResult, setBackendPingResult] = useState<string | null>(null);
-  const [isBackendSettingsOpen, setIsBackendSettingsOpen] = useState<boolean>(false);
 
   const handleSyncQuestionnaire = async () => {
     setIsSyncingQuestionnaire(true);
@@ -277,20 +264,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
   }, []);
 
   // Top metric counts dynamically calculated from live records and statusCache
-  const totalRegistered = students.length;
-  const totalSubmitted = useMemo(
-    () => students.filter((s) => getStudentEffectiveStatus(s) === 'Submitted').length,
+  const {
+    totalRegistered,
+    totalSubmitted,
+    totalInProgress,
+    totalNotStarted,
+    totalUnableToLoad,
+  } = useMemo(
+    () => computeAdminSummaryCounts(students, statusCache, statusErrors),
     [students, statusCache, statusErrors]
   );
-  const totalInProgress = useMemo(
-    () => students.filter((s) => getStudentEffectiveStatus(s) === 'In Progress').length,
-    [students, statusCache, statusErrors]
-  );
-  const totalNotStarted = useMemo(
-    () => students.filter((s) => getStudentEffectiveStatus(s) === 'Not Started').length,
-    [students, statusCache, statusErrors]
-  );
-  const totalUnableToLoad = Object.keys(statusErrors).length;
 
   // Unique institutions list for the institution filter
   const uniqueInstitutions = useMemo(() => {
@@ -298,64 +281,33 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
   }, [students]);
 
   // Filtered and sorted students list
-  const filteredStudents = useMemo(() => {
-    return students
-      .filter((student) => {
-        // Multi-field search filter: name, email, institution, or class
-        if (searchQuery.trim()) {
-          const q = searchQuery.trim().toLowerCase();
-          const nameMatch = student.fullName.toLowerCase().includes(q);
-          const emailMatch = (student.email || '').toLowerCase().includes(q);
-          const schoolMatch = (student.schoolName || '').toLowerCase().includes(q);
-          const classMatch =
-            student.classGrade.toLowerCase().includes(q) ||
-            formatClassDisplay(student.classGrade).toLowerCase().includes(q);
+  const filteredStudents = useMemo(
+    () =>
+      filterAndSortStudents(
+        students,
+        {
+          searchQuery,
+          classFilter,
+          institutionFilter,
+          statusFilter,
+          sortBy,
+        },
+        statusCache,
+        statusErrors
+      ),
+    [students, searchQuery, classFilter, institutionFilter, statusFilter, sortBy, statusCache, statusErrors]
+  );
 
-          if (!nameMatch && !emailMatch && !schoolMatch && !classMatch) {
-            return false;
-          }
-        }
-
-        // Class filter
-        if (classFilter !== 'all') {
-          if (normalizeClassGrade(student.classGrade) !== classFilter) {
-            return false;
-          }
-        }
-
-        // Institution filter
-        if (institutionFilter !== 'all') {
-          if (student.schoolName !== institutionFilter) {
-            return false;
-          }
-        }
-
-        // Status filter (dynamically matches card metric count)
-        if (statusFilter !== 'all') {
-          const currentStatus = getStudentEffectiveStatus(student);
-          if (currentStatus !== statusFilter) {
-            return false;
-          }
-        }
-
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortBy === 'name_asc') {
-          return a.fullName.localeCompare(b.fullName, undefined, { sensitivity: 'base' });
-        }
-        if (sortBy === 'name_desc') {
-          return b.fullName.localeCompare(a.fullName, undefined, { sensitivity: 'base' });
-        }
-        if (sortBy === 'date_desc') {
-          return (b.createdAt || '').localeCompare(a.createdAt || '');
-        }
-        if (sortBy === 'date_asc') {
-          return (a.createdAt || '').localeCompare(b.createdAt || '');
-        }
-        return 0;
-      });
-  }, [students, searchQuery, classFilter, institutionFilter, statusFilter, sortBy, statusCache, statusErrors]);
+  const activeFilterChips = useMemo(
+    () =>
+      getActiveFilterChips({
+        searchQuery,
+        classFilter,
+        institutionFilter,
+        statusFilter,
+      }),
+    [searchQuery, classFilter, institutionFilter, statusFilter]
+  );
 
   // Reset to page 1 whenever any filter, search, or sort changes
   useEffect(() => {
@@ -468,6 +420,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
       updatedAt: loadedAnswersData?.updatedAt || cached?.updatedAt || base.updatedAt,
       answers: loadedAnswersData?.answers || base.answers,
       answeredCount: loadedAnswersData?.answeredCount ?? base.answeredCount,
+      version: loadedAnswersData?.version,
     };
   }, [students, selectedStudentId, loadedAnswersData, statusCache, statusErrors]);
 
@@ -520,7 +473,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
     return () => {
       isCancelled = true;
     };
-  }, [selectedStudentId]);
+  }, [selectedStudentId, answersRetryNonce]);
 
   // Previous / Next navigation index inside the current filtered list
   const currentFilteredIndex = useMemo(() => {
@@ -651,56 +604,30 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
       {/* 1. SCREEN INTERFACE (Hidden during print)                      */}
       {/* ============================================================== */}
       <div className="print:hidden flex flex-col min-h-screen">
-        {/* Administration Header */}
-        <header className="bg-white border-b border-[#E8F3FF] px-4 sm:px-8 py-3.5 sticky top-0 z-30 shadow-xs">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedStudentId(null);
-                }}
-                className="flex items-center text-left focus-visible:outline-2 focus-visible:outline-[#0866C6] rounded-lg cursor-pointer"
-                title="DeRote Administration"
-              >
-                <DeRoteWordmark showDescriptor={false} size="md" />
-              </button>
-              <span className="h-5 w-px bg-[#D5E4F3]" aria-hidden="true" />
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-[#0866C6] bg-[#EBF4FE] px-2.5 py-1 rounded-md">
-                  Administration
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="text-right hidden md:block">
-                <div className="text-xs font-bold text-[#062B50]">{admin.fullName}</div>
-                <div className="text-[11px] text-[#64778C]">{admin.email}</div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => onNavigate('/')}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#D5E4F3] text-xs font-semibold text-[#062B50] hover:bg-[#F2F7FC] transition-colors cursor-pointer"
-                title="Return to Student Portal"
-              >
-                <span>Student Site</span>
-                <ExternalLink className="w-3.5 h-3.5 text-[#64778C]" />
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="p-2 sm:px-3 sm:py-1.5 rounded-xl border border-[#D5E4F3] text-xs font-bold text-[#64778C] hover:text-red-600 hover:border-red-200 transition-colors cursor-pointer flex items-center gap-1.5"
-                title="Sign Out of Administration"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="hidden sm:inline">Sign Out</span>
-              </button>
-            </div>
-          </div>
-        </header>
+        {/* Compact Sticky Administration Header */}
+        <AdminHeader
+          admin={admin}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          onOpenSearchNavigateToList={() => {
+            if (selectedStudentId) {
+              setSelectedStudentId(null);
+            }
+          }}
+          onReturnToMainDashboard={() => {
+            setSelectedStudentId(null);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          onRefreshData={loadData}
+          onSyncQuestionnaire={handleSyncQuestionnaire}
+          onTestBackendPing={handleTestBackendPing}
+          isSyncingQuestionnaire={isSyncingQuestionnaire}
+          isTestingPing={isTestingPing}
+          backendPingResult={backendPingResult}
+          questionCount={QUESTIONS.length}
+          sectionCount={SECTIONS.length}
+          onSignOut={handleSignOut}
+        />
 
         {/* Global Feedback Banner */}
         {notification && (
@@ -742,725 +669,63 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
             /* ============================================================== */
             /* 2. INDIVIDUAL STUDENT PAGE VIEW                                */
             /* ============================================================== */
-            <div className="space-y-6">
-              {/* Navigation Bar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-[#E8F3FF] shadow-xs">
-                <button
-                  type="button"
-                  onClick={() => setSelectedStudentId(null)}
-                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold text-[#0866C6] hover:bg-[#EBF4FE] transition-colors cursor-pointer w-fit"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Back to Student List</span>
-                </button>
-
-                <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                  {currentFilteredIndex >= 0 && (
-                    <span className="text-xs text-[#64778C] font-medium mr-1 hidden sm:inline">
-                      Student {currentFilteredIndex + 1} of {filteredStudents.length}
-                    </span>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={handlePreviousStudent}
-                    disabled={!hasPrevious}
-                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-[#D5E4F3] text-xs font-semibold text-[#062B50] hover:bg-[#F2F7FC] disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                    title="Previous Student"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                    <span>Previous</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleNextStudent}
-                    disabled={!hasNext}
-                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-[#D5E4F3] text-xs font-semibold text-[#062B50] hover:bg-[#F2F7FC] disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                    title="Next Student"
-                  >
-                    <span>Next</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handlePrintReport}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#D5E4F3] bg-white text-[#062B50] text-xs font-bold hover:bg-[#F2F7FC] hover:border-[#0866C6] transition-colors cursor-pointer shadow-xs"
-                    title="Print student reflection report"
-                  >
-                    <Printer className="w-4 h-4 text-[#0866C6]" />
-                    <span>Print Report</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Student Profile Card */}
-              <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E8F3FF] shadow-xs">
-                <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pb-6 border-b border-[#E8F3FF]">
-                  <div>
-                    <div className="flex items-center gap-3 flex-wrap mb-2">
-                      <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight">
-                        {selectedStudent.fullName}
-                      </h1>
-
-                      {/* Status indicator */}
-                      {selectedStudent.status === 'Submitted' && (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Submitted</span>
-                        </span>
-                      )}
-                      {selectedStudent.status === 'In Progress' && (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold">
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>In Progress</span>
-                        </span>
-                      )}
-                      {selectedStudent.status === 'Not Started' && (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold">
-                          <span>Not Started</span>
-                        </span>
-                      )}
-                      {selectedStudent.status === 'Unable to Load' && (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-red-50 text-red-700 border border-red-200 text-xs font-bold">
-                          <AlertCircle className="w-3.5 h-3.5 text-red-600" />
-                          <span>Unable to Load</span>
-                        </span>
-                      )}
-                    </div>
-
-                    <p className="text-xs sm:text-sm text-[#5A6E85]">
-                      {selectedStudent.email ? (
-                        <span>{selectedStudent.email}</span>
-                      ) : (
-                        <span>Student Record ID: {selectedStudent.id}</span>
-                      )}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleOpenEditModal}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#0866C6] text-[#0866C6] hover:bg-[#EBF4FE] text-xs sm:text-sm font-bold transition-colors cursor-pointer w-fit"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    <span>Edit Student Details</span>
-                  </button>
-                </div>
-
-                {/* Profile Fields Grid - 8 fields as required by Phase 6 */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pt-6">
-                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
-                      <User className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Full Name</span>
-                    </div>
-                    <div className="text-sm font-bold text-[#062B50] break-words">
-                      {selectedStudent.fullName}
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
-                      <Mail className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Email</span>
-                    </div>
-                    <div className="text-sm font-bold text-[#062B50] break-words truncate" title={selectedStudent.email}>
-                      {selectedStudent.email || '—'}
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
-                      <Clock className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Age</span>
-                    </div>
-                    <div className="text-sm font-bold text-[#062B50]">
-                      {selectedStudent.age ? `${selectedStudent.age} years` : 'Not specified'}
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
-                      <BookOpen className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Class / Grade</span>
-                    </div>
-                    <div className="text-sm font-bold text-[#062B50]">
-                      {formatClassDisplay(selectedStudent.classGrade)}
-                    </div>
-                  </div>
-
-                  <div className="col-span-2 p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
-                      <School className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Institution / School</span>
-                    </div>
-                    <div className="text-sm font-bold text-[#062B50] break-words" title={selectedStudent.schoolName}>
-                      {selectedStudent.schoolName}
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
-                      <Calendar className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Registration Date</span>
-                    </div>
-                    <div className="text-sm font-bold text-[#062B50]">
-                      {selectedStudent.createdAt
-                        ? new Date(selectedStudent.createdAt).toLocaleDateString(undefined, {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })
-                        : '—'}
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64778C] mb-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Submission Date</span>
-                    </div>
-                    <div className="text-sm font-bold text-[#062B50]">
-                      {selectedStudent.submittedAt
-                        ? new Date(selectedStudent.submittedAt).toLocaleDateString(undefined, {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })
-                        : selectedStudent.status === 'Submitted'
-                        ? 'Submitted'
-                        : selectedStudent.status === 'Unable to Load'
-                        ? 'Lookup Failed'
-                        : 'Not submitted yet'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Questionnaire Status Banner */}
-                {selectedStudent.status === 'In Progress' && (
-                  <div className="mt-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3">
-                    <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800">
-                        Incomplete Responses
-                      </h4>
-                      <p className="text-xs sm:text-sm text-amber-700 mt-0.5">
-                        This student is currently in progress. Showing only responses that have actually been saved.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {selectedStudent.status === 'Not Started' && (
-                  <div className="mt-6 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-slate-800 flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                        Not Started
-                      </h4>
-                      <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
-                        This student has not yet begun answering the self-discovery questionnaire.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {selectedStudent.status === 'Unable to Load' && (
-                  <div className="mt-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                      <div>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-red-800">
-                          Status Lookup Error
-                        </h4>
-                        <p className="text-xs sm:text-sm text-red-700 mt-0.5">
-                          {statusErrors[selectedStudent.id]
-                            ? `Could not verify questionnaire status: ${statusErrors[selectedStudent.id]}`
-                            : "Unable to retrieve this student's questionnaire status due to a Firestore or network error."}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => handleRetryStudentStatus(selectedStudent.id, e)}
-                      disabled={retryingStatusIds.has(selectedStudent.id)}
-                      className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition shadow-xs cursor-pointer self-start sm:self-auto disabled:opacity-50"
-                    >
-                      {retryingStatusIds.has(selectedStudent.id) ? 'Retrying...' : 'Retry Status Check'}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Student Answers Display Section */}
-              <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E8F3FF] shadow-xs space-y-8">
-                <div className="border-b border-[#E8F3FF] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <h2 className="text-xl font-bold text-[#062B50]">Questionnaire Responses</h2>
-                    <p className="text-xs sm:text-sm text-[#64778C] mt-0.5">
-                      {selectedStudent.status === 'Submitted'
-                        ? 'Complete responses in original question order.'
-                        : selectedStudent.status === 'In Progress'
-                        ? 'Incomplete Responses — saved questions in original order.'
-                        : 'No responses recorded yet.'}
-                    </p>
-                  </div>
-                  <div className="text-xs font-bold text-[#0866C6] bg-[#EBF4FE] px-3 py-1 rounded-full w-fit">
-                    {selectedStudent.answeredCount} of {QUESTIONS.length} Questions Answered
-                  </div>
-                </div>
-
-                {isLoadingAnswers ? (
-                  <div className="text-center py-16 text-[#64778C]">
-                    <RefreshCw className="w-8 h-8 mx-auto text-[#0866C6] animate-spin mb-3" />
-                    <p className="text-sm font-semibold text-[#062B50]">Loading student responses from Firestore...</p>
-                    <p className="text-xs text-[#64778C] mt-1">Retrieving answers for {selectedStudent.fullName}...</p>
-                  </div>
-                ) : answersError ? (
-                  <div className="p-6 rounded-2xl bg-red-50 border border-red-200 text-center space-y-3">
-                    <AlertCircle className="w-8 h-8 text-red-600 mx-auto" />
-                    <p className="text-sm font-semibold text-red-900">{answersError}</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const sId = selectedStudentId;
-                        setSelectedStudentId(null);
-                        setTimeout(() => setSelectedStudentId(sId), 50);
-                      }}
-                      className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition cursor-pointer"
-                    >
-                      Retry Loading Answers
-                    </button>
-                  </div>
-                ) : selectedStudent.status === 'Not Started' || selectedStudent.answeredCount === 0 ? (
-                  <div className="text-center py-12 text-[#64778C]">
-                    <AlertCircle className="w-10 h-10 mx-auto text-[#0866C6] opacity-40 mb-3" />
-                    <p className="text-sm font-semibold text-[#062B50]">No Answers Saved Yet</p>
-                    <p className="text-xs text-[#64778C] mt-1 max-w-md mx-auto">
-                      Once the student opens the questionnaire and saves responses, their answers will appear here in original sequence.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-10">
-                    {SECTIONS.map((section) => {
-                      const sectionQuestions = QUESTIONS.filter((q) => q.section === section.id);
-                      // Incomplete response check for this section
-                      const sectionHasAnswers = sectionQuestions.some((q) => {
-                        const val = resolveQuestionAnswer(selectedStudent.answers, q.n);
-                        return val !== undefined && val !== null && (typeof val === 'string' ? val.trim() !== '' : val.length > 0);
-                      });
-
-                      // If in progress and this section has zero answers, we can still show questions as unanswered or marked
-                      return (
-                        <div key={section.id} className="space-y-4">
-                          {/* Section Header */}
-                          <div className="bg-[#F8FAFD] border border-[#E8F3FF] p-4 rounded-2xl">
-                            <div className="text-xs font-bold text-[#0866C6] uppercase tracking-wider">
-                              Section {section.id}
-                            </div>
-                            <h3 className="text-base sm:text-lg font-bold text-[#062B50] mt-0.5">
-                              {section.title}
-                            </h3>
-                            {section.intro && (
-                              <p className="text-xs sm:text-sm text-[#5A6E85] mt-1 italic leading-relaxed">
-                                {section.intro}
-                              </p>
-                            )}
-                          </div>
-
-                          {/* Questions in Section */}
-                          <div className="space-y-3.5 pl-1 sm:pl-3">
-                            {sectionQuestions.map((q: Question) => {
-                              const answer = resolveQuestionAnswer(selectedStudent.answers, q.n);
-                              const isAnswered =
-                                answer !== undefined &&
-                                answer !== null &&
-                                (typeof answer === 'string' ? answer.trim().length > 0 : answer.length > 0);
-
-                              return (
-                                <div
-                                  key={q.n}
-                                  className={`p-4 rounded-2xl border transition-colors ${
-                                    isAnswered
-                                      ? 'bg-white border-[#E8F3FF] hover:border-[#0866C6]/30'
-                                      : 'bg-[#FCFDFE] border-dashed border-[#E2EDF8]'
-                                  }`}
-                                >
-                                  {/* Question Title & Number */}
-                                  <div className="flex items-start gap-2.5 mb-2">
-                                    <span className="text-xs font-extrabold text-[#0866C6] bg-[#EBF4FE] px-2 py-0.5 rounded-md shrink-0">
-                                      Q{q.n}
-                                    </span>
-                                    <span className="text-xs font-medium text-[#64778C] uppercase tracking-wider pt-0.5">
-                                      {q.type === 'text'
-                                        ? 'Written Response'
-                                        : q.type === 'single'
-                                        ? 'Single Choice'
-                                        : 'Multiple Choice'}
-                                    </span>
-                                  </div>
-                                  <p className="text-sm font-semibold text-[#062B50] leading-snug mb-3">
-                                    {q.text}
-                                  </p>
-
-                                  {/* Answer Content */}
-                                  {isAnswered ? (
-                                    <div className="p-3.5 rounded-xl bg-[#F8FAFD] border border-[#E8F3FF]">
-                                      {q.type === 'text' && (
-                                        <p className="text-sm text-[#062B50] whitespace-pre-wrap leading-relaxed font-normal">
-                                          {answer as string}
-                                        </p>
-                                      )}
-
-                                      {q.type === 'single' && (
-                                        <div className="flex items-center gap-2 text-sm font-bold text-[#062B50]">
-                                          <div className="w-2.5 h-2.5 rounded-full bg-[#0866C6] shrink-0" />
-                                          <span>{answer as string}</span>
-                                        </div>
-                                      )}
-
-                                      {q.type === 'multi' && (
-                                        <div className="space-y-1.5">
-                                          {Array.isArray(answer) ? (
-                                            (answer as string[]).map((item, idx) => (
-                                              <div
-                                                key={idx}
-                                                className="flex items-center gap-2 text-sm font-semibold text-[#062B50]"
-                                              >
-                                                <div className="w-2 h-2 rounded-sm bg-[#0866C6] shrink-0" />
-                                                <span>{item}</span>
-                                              </div>
-                                            ))
-                                          ) : (
-                                            <span className="text-sm font-semibold text-[#062B50]">
-                                              {String(answer)}
-                                            </span>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="text-xs text-[#8A9BA8] italic p-2.5 rounded-lg bg-[#F8FAFD]/50">
-                                      No response provided (unanswered)
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
+            <AdminStudentDetail
+              selectedStudent={selectedStudent}
+              currentFilteredIndex={currentFilteredIndex}
+              totalFilteredCount={filteredStudents.length}
+              hasPrevious={hasPrevious}
+              hasNext={hasNext}
+              isLoadingAnswers={isLoadingAnswers}
+              answersError={answersError}
+              statusError={statusErrors[selectedStudent.id]}
+              isRetryingStatus={retryingStatusIds.has(selectedStudent.id)}
+              onBackToList={() => setSelectedStudentId(null)}
+              onPreviousStudent={handlePreviousStudent}
+              onNextStudent={handleNextStudent}
+              onPrintReport={handlePrintReport}
+              onOpenEditModal={handleOpenEditModal}
+              onRetryStatus={handleRetryStudentStatus}
+              onRetryAnswers={() => setAnswersRetryNonce((n) => n + 1)}
+            />
           ) : (
             /* ============================================================== */
             /* 3. MAIN DASHBOARD — STUDENT LIST VIEW                         */
             /* ============================================================== */
-            <div className="space-y-8">
-              {/* Dashboard Heading */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold text-[#062B50] tracking-tight">
+            <div className="space-y-5 sm:space-y-6">
+              {/* Student Roster Heading + Compact Printer Icon */}
+              <div>
+                <div className="flex items-start sm:items-center gap-2.5">
+                  <h1 className="text-xl sm:text-2xl font-extrabold text-[#062B50] tracking-tight leading-snug">
                     Student Roster &amp; Questionnaire Records
                   </h1>
-                  <p className="text-xs sm:text-sm text-[#5A6E85] mt-1">
-                    Manage student registration details and inspect submitted self-discovery responses.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={handlePrintReport}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#D5E4F3] bg-white text-[#062B50] text-xs sm:text-sm font-bold hover:bg-[#F2F7FC] hover:border-[#0866C6] transition-colors shadow-xs cursor-pointer"
-                    title="Print student cohort report"
+                    aria-label="Print Report"
+                    title="Print Report"
+                    className="w-9 h-9 rounded-lg border border-[#D5E4F3] bg-white text-[#0866C6] hover:bg-[#F2F7FC] hover:border-[#0866C6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0866C6] inline-flex items-center justify-center shrink-0 transition-colors cursor-pointer"
                   >
-                    <Printer className="w-4 h-4 text-[#0866C6]" />
-                    <span>Print Report</span>
+                    <Printer className="w-4 h-4" />
                   </button>
                 </div>
+                <p className="text-xs sm:text-sm text-[#5A6E85] mt-1">
+                  Manage student registration details and inspect submitted self-discovery responses.
+                </p>
               </div>
 
-              {/* Interactive Top Metric Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* 1. Total Students Card */}
-                <button
-                  type="button"
-                  onClick={() => handleCardFilterClick('all')}
-                  className={`rounded-3xl p-5 sm:p-6 text-left transition-all cursor-pointer relative group ${
-                    statusFilter === 'all'
-                      ? 'bg-blue-50/70 border-2 border-[#0866C6] shadow-sm ring-2 ring-[#0866C6]/20'
-                      : 'bg-white border border-[#E8F3FF] hover:border-[#0866C6]/40 hover:bg-[#F8FAFD] shadow-xs'
-                  }`}
-                  aria-pressed={statusFilter === 'all'}
-                  title="Click to view and scroll to all registered students"
-                >
-                  <div className="flex items-center justify-between text-xs font-semibold text-[#64778C] mb-2">
-                    <span className="flex items-center gap-1.5 font-bold">
-                      Total Students
-                      {statusFilter === 'all' && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#0866C6] text-white">
-                          Active
-                        </span>
-                      )}
-                    </span>
-                    <div
-                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
-                        statusFilter === 'all' ? 'bg-[#0866C6] text-white' : 'bg-[#E8F3FF] text-[#0866C6]'
-                      }`}
-                    >
-                      <Users className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <div className="text-2xl sm:text-3xl font-extrabold text-[#062B50]">
-                    {totalRegistered}
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-[#64778C] mt-1.5">
-                    <span>Registered in database</span>
-                    <span className="text-[10px] font-semibold text-[#0866C6] opacity-0 group-hover:opacity-100 transition-opacity">
-                      {statusFilter === 'all' ? 'Showing all' : 'Show all'}
-                    </span>
-                  </div>
-                </button>
-
-                {/* 2. Submitted Card */}
-                <button
-                  type="button"
-                  onClick={() => handleCardFilterClick('Submitted')}
-                  className={`rounded-3xl p-5 sm:p-6 text-left transition-all cursor-pointer relative group ${
-                    statusFilter === 'Submitted'
-                      ? 'bg-emerald-50/70 border-2 border-emerald-600 shadow-sm ring-2 ring-emerald-500/20'
-                      : 'bg-white border border-[#E8F3FF] hover:border-emerald-500/40 hover:bg-[#F6FBF8] shadow-xs'
-                  }`}
-                  aria-pressed={statusFilter === 'Submitted'}
-                  title={statusFilter === 'Submitted' ? 'Click to show all students and scroll to list' : 'Click to filter and scroll to submitted students'}
-                >
-                  <div className="flex items-center justify-between text-xs font-semibold text-emerald-800 mb-2">
-                    <span className="flex items-center gap-1.5 font-bold">
-                      Submitted
-                      {statusFilter === 'Submitted' && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white">
-                          Active Filter
-                        </span>
-                      )}
-                    </span>
-                    <div
-                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
-                        statusFilter === 'Submitted' ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700'
-                      }`}
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <div className="text-2xl sm:text-3xl font-extrabold text-[#062B50]">
-                    {totalSubmitted}
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-emerald-700 font-medium mt-1.5">
-                    <span>Completed reflections</span>
-                    <span className="text-[10px] font-semibold text-emerald-700 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {statusFilter === 'Submitted' ? 'Click to clear' : 'Filter roster'}
-                    </span>
-                  </div>
-                </button>
-
-                {/* 3. In Progress Card */}
-                <button
-                  type="button"
-                  onClick={() => handleCardFilterClick('In Progress')}
-                  className={`rounded-3xl p-5 sm:p-6 text-left transition-all cursor-pointer relative group ${
-                    statusFilter === 'In Progress'
-                      ? 'bg-amber-50/70 border-2 border-amber-600 shadow-sm ring-2 ring-amber-500/20'
-                      : 'bg-white border border-[#E8F3FF] hover:border-amber-500/40 hover:bg-[#FDFBF7] shadow-xs'
-                  }`}
-                  aria-pressed={statusFilter === 'In Progress'}
-                  title={statusFilter === 'In Progress' ? 'Click to show all students and scroll to list' : 'Click to filter and scroll to in-progress students'}
-                >
-                  <div className="flex items-center justify-between text-xs font-semibold text-amber-800 mb-2">
-                    <span className="flex items-center gap-1.5 font-bold">
-                      In Progress
-                      {statusFilter === 'In Progress' && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-600 text-white">
-                          Active Filter
-                        </span>
-                      )}
-                    </span>
-                    <div
-                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
-                        statusFilter === 'In Progress' ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-700'
-                      }`}
-                    >
-                      <Clock className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <div className="text-2xl sm:text-3xl font-extrabold text-[#062B50]">
-                    {totalInProgress}
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-amber-800 font-medium mt-1.5">
-                    <span>Saved partial responses</span>
-                    <span className="text-[10px] font-semibold text-amber-700 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {statusFilter === 'In Progress' ? 'Click to clear' : 'Filter roster'}
-                    </span>
-                  </div>
-                </button>
-
-                {/* 4. Not Started Card */}
-                <button
-                  type="button"
-                  onClick={() => handleCardFilterClick('Not Started')}
-                  className={`rounded-3xl p-5 sm:p-6 text-left transition-all cursor-pointer relative group ${
-                    statusFilter === 'Not Started'
-                      ? 'bg-slate-100/90 border-2 border-slate-600 shadow-sm ring-2 ring-slate-500/20'
-                      : 'bg-white border border-[#E8F3FF] hover:border-slate-400 hover:bg-[#F8FAFD] shadow-xs'
-                  }`}
-                  aria-pressed={statusFilter === 'Not Started'}
-                  title={statusFilter === 'Not Started' ? 'Click to show all students and scroll to list' : 'Click to filter and scroll to not-started students'}
-                >
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-2">
-                    <span className="flex items-center gap-1.5 font-bold">
-                      Not Started
-                      {statusFilter === 'Not Started' && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-700 text-white">
-                          Active Filter
-                        </span>
-                      )}
-                    </span>
-                    <div
-                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
-                        statusFilter === 'Not Started' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      <AlertCircle className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <div className="text-2xl sm:text-3xl font-extrabold text-[#062B50]">
-                    {totalNotStarted}
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-600 font-medium mt-1.5">
-                    <span>Awaiting questionnaire</span>
-                    <span className="text-[10px] font-semibold text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {statusFilter === 'Not Started' ? 'Click to clear' : 'Filter roster'}
-                    </span>
-                  </div>
-                </button>
-              </div>
-
-              {/* Compact, Collapsible Backend & System Settings Section */}
-              <div className="bg-white rounded-2xl border border-[#D5E4F3] p-4 text-[#102C46] transition-all">
-                {/* Summary / Header Row (Always Visible) */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <div className="w-8 h-8 rounded-xl bg-[#E8F3FF] text-[#0866C6] flex items-center justify-center shrink-0">
-                      <Database className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs sm:text-sm font-bold text-[#062B50]">
-                          Backend &amp; System Settings
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-semibold">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          <span>Firebase Backend Active</span>
-                        </span>
-                        <span className="text-[11px] text-[#64778C] font-mono hidden md:inline">
-                          Project: gen-lang-client-0276070718
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-[#64778C] mt-0.5">
-                        Firestore database syncing student profiles, drafts, submissions, and questionnaires
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={loadData}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#D5E4F3] bg-white hover:bg-[#F2F7FC] text-[#062B50] font-semibold text-xs transition-colors cursor-pointer"
-                      title="Reload all student records and live statuses from Firestore"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-[#0866C6]" />
-                      <span>Refresh Data</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsBackendSettingsOpen((prev) => !prev)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#D5E4F3] bg-[#F8FAFD] hover:bg-[#F2F7FC] text-[#062B50] font-semibold text-xs transition-colors cursor-pointer"
-                      aria-expanded={isBackendSettingsOpen}
-                    >
-                      <span>{isBackendSettingsOpen ? 'Hide Controls' : 'Technical Controls'}</span>
-                      <ChevronDown
-                        className={`w-3.5 h-3.5 text-[#64778C] transition-transform duration-200 ${
-                          isBackendSettingsOpen ? 'rotate-180' : ''
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Collapsible Content */}
-                {isBackendSettingsOpen && (
-                  <div className="mt-4 pt-4 border-t border-[#E8F3FF] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    <div className="text-xs text-[#5A6E85] space-y-1">
-                      <p className="font-semibold text-[#062B50]">
-                        Active Firestore Cloud Collections:
-                      </p>
-                      <p className="text-[11px] leading-relaxed">
-                        <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">students</code> (Profiles) •{' '}
-                        <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">submissions</code> (Final responses) •{' '}
-                        <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">drafts</code> (Autosaved progress) •{' '}
-                        <code className="bg-[#F2F7FC] px-1.5 py-0.5 rounded text-[#0866C6] font-mono">questionnaires</code> ({QUESTIONS.length} questions, {SECTIONS.length} sections)
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2.5 flex-wrap shrink-0">
-                      <button
-                        type="button"
-                        onClick={handleSyncQuestionnaire}
-                        disabled={isSyncingQuestionnaire}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0866C6] hover:bg-[#062B50] text-white font-bold text-xs transition-all shadow-xs cursor-pointer disabled:opacity-60"
-                        title={`Upload or update all ${QUESTIONS.length} questions & ${SECTIONS.length} sections in Firestore backend`}
-                      >
-                        {isSyncingQuestionnaire ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Syncing to Cloud...</span>
-                          </>
-                        ) : (
-                          <>
-                            <UploadCloud className="w-3.5 h-3.5" />
-                            <span>Move / Sync Questionnaire to Backend</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleTestBackendPing}
-                        disabled={isTestingPing}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#D5E4F3] bg-white hover:bg-[#F2F7FC] text-[#062B50] font-semibold text-xs transition-colors cursor-pointer disabled:opacity-60"
-                        title="Verify read/write permissions to Firestore backend"
-                      >
-                        {isTestingPing ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#0866C6]" />
-                        ) : (
-                          <Cloud className="w-3.5 h-3.5 text-[#0866C6]" />
-                        )}
-                        <span>{backendPingResult ? `Ping: ${backendPingResult}` : 'Test Cloud Ping'}</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              {/* Refined Interactive Summary Cards */}
+              <AdminSummaryCards
+                statusFilter={statusFilter}
+                totalRegistered={totalRegistered}
+                totalSubmitted={totalSubmitted}
+                totalInProgress={totalInProgress}
+                totalNotStarted={totalNotStarted}
+                onCardClick={handleCardFilterClick}
+              />
 
               {/* Load Error Banner */}
               {loadError && (
-                <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-900 flex items-center justify-between">
+                <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-900 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-sm font-semibold">
                     <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
                     <span>{loadError}</span>
@@ -1468,47 +733,23 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                   <button
                     type="button"
                     onClick={loadData}
-                    className="px-3.5 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition cursor-pointer shrink-0"
                   >
                     Retry
                   </button>
                 </div>
               )}
 
-              {/* Search and Filters Bar */}
-              <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#E8F3FF] shadow-xs space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 sm:gap-4 items-center">
-                  {/* Search Bar - Multi-field Search */}
-                  <div className="lg:col-span-4 relative">
-                    <Search className="w-4 h-4 text-[#64778C] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search by name, email, institution, or class..."
-                      className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm text-[#062B50] placeholder-[#8A9BA8] focus:outline-none focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/10 transition-all bg-[#F8FAFD]"
-                    />
-                    {searchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setSearchQuery('')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8A9BA8] hover:text-[#062B50] p-1 cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
+              {/* Simplified Roster Filter Bar */}
+              <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-[#E2EDF8] space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 sm:gap-3 items-center">
                   {/* Class Filter */}
-                  <div className="lg:col-span-2">
+                  <div className="lg:col-span-3">
                     <select
                       value={classFilter}
-                      onChange={(e) =>
-                        setClassFilter(
-                          e.target.value as 'all' | '8' | '9' | '10' | '11' | '12' | 'Higher' | 'Others'
-                        )
-                      }
-                      className="w-full px-3 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/10 cursor-pointer"
+                      onChange={(e) => setClassFilter(e.target.value as AdminClassFilter)}
+                      aria-label="Filter by class"
+                      className="w-full h-10 px-3 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] cursor-pointer"
                     >
                       <option value="all">All Classes</option>
                       <option value="8">Class 8</option>
@@ -1522,12 +763,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                   </div>
 
                   {/* Institution Filter */}
-                  <div className="lg:col-span-3">
+                  <div className="lg:col-span-5">
                     <select
                       value={institutionFilter}
                       onChange={(e) => setInstitutionFilter(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/10 cursor-pointer truncate"
+                      aria-label="Filter by institution"
                       title="Filter by institution"
+                      className="w-full h-10 px-3 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] cursor-pointer truncate"
                     >
                       <option value="all">All Institutions ({uniqueInstitutions.length})</option>
                       {uniqueInstitutions.map((inst) => (
@@ -1538,98 +780,19 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     </select>
                   </div>
 
-                  {/* Status Filter */}
-                  <div className="lg:col-span-2">
-                    <select
-                      value={statusFilter}
-                      onChange={(e) =>
-                        setStatusFilter(
-                          e.target.value as 'all' | 'Submitted' | 'In Progress' | 'Not Started' | 'Unable to Load'
-                        )
-                      }
-                      className="w-full px-3 py-2.5 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] focus:ring-2 focus:ring-[#0866C6]/10 cursor-pointer"
+                  {/* Sort Control */}
+                  <div className="sm:col-span-2 lg:col-span-4 flex items-center gap-2">
+                    <label
+                      htmlFor="admin-sort-select"
+                      className="text-xs font-semibold text-[#5A6E85] whitespace-nowrap shrink-0"
                     >
-                      <option value="all">All Statuses</option>
-                      <option value="Submitted">Submitted</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Not Started">Not Started</option>
-                      <option value="Unable to Load">Unable to Load</option>
-                    </select>
-                  </div>
-
-                  {/* Reset Filters Button */}
-                  <div className="lg:col-span-1 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={handleResetFilters}
-                      className="w-full p-2.5 rounded-xl border border-[#D5E4F3] text-[#64778C] hover:text-[#062B50] hover:bg-[#F2F7FC] transition-colors cursor-pointer flex items-center justify-center"
-                      title="Reset all filters and search"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      <span className="lg:hidden ml-2 text-xs font-semibold">Reset</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Filter info indicator and Sort Control */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-[#64778C] pt-2 border-t border-[#E8F3FF]">
-                  <div className="flex items-center gap-3">
-                    <span>
-                      Showing{' '}
-                      <strong className="text-[#062B50]">
-                        {filteredStudents.length === 0
-                          ? 0
-                          : `${(currentPage - 1) * pageSize + 1}–${Math.min(
-                              currentPage * pageSize,
-                              filteredStudents.length
-                            )}`}
-                      </strong>{' '}
-                      of <strong className="text-[#062B50]">{filteredStudents.length}</strong> students
-                      {filteredStudents.length !== students.length && (
-                        <span> (filtered from {students.length} total)</span>
-                      )}
-                    </span>
-
-                    {statusFilter !== 'all' && (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#EBF4FE] text-[#0866C6] border border-[#D5E4F3]">
-                        <span>Status: {statusFilter}</span>
-                        <button
-                          type="button"
-                          onClick={() => setStatusFilter('all')}
-                          className="hover:text-red-600 cursor-pointer ml-0.5 text-xs font-bold leading-none"
-                          title="Clear status filter"
-                          aria-label="Clear status filter"
-                        >
-                          ×
-                        </button>
-                      </span>
-                    )}
-
-                    {(searchQuery ||
-                      classFilter !== 'all' ||
-                      institutionFilter !== 'all' ||
-                      statusFilter !== 'all') && (
-                      <button
-                        type="button"
-                        onClick={handleResetFilters}
-                        className="text-xs font-bold text-[#0866C6] hover:underline cursor-pointer"
-                      >
-                        Clear active filters
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Sort Controls */}
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-[#64778C]">Sort:</span>
+                      Sort:
+                    </label>
                     <select
+                      id="admin-sort-select"
                       value={sortBy}
-                      onChange={(e) =>
-                        setSortBy(
-                          e.target.value as 'name_asc' | 'name_desc' | 'date_desc' | 'date_asc'
-                        )
-                      }
-                      className="px-2.5 py-1 rounded-lg border border-[#D5E4F3] text-xs font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] cursor-pointer"
+                      onChange={(e) => setSortBy(e.target.value as AdminSortBy)}
+                      className="w-full h-10 px-3 rounded-xl border border-[#D5E4F3] text-xs sm:text-sm font-semibold text-[#062B50] bg-[#F8FAFD] focus:outline-none focus:border-[#0866C6] cursor-pointer"
                     >
                       <option value="name_asc">Name (A–Z)</option>
                       <option value="name_desc">Name (Z–A)</option>
@@ -1638,191 +801,106 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
                     </select>
                   </div>
                 </div>
-              </div>
 
-              {/* Student List Table */}
-              <div
-                ref={studentListRef}
-                className="bg-white rounded-3xl border border-[#E8F3FF] shadow-xs overflow-hidden scroll-mt-24"
-              >
-                {filteredStudents.length === 0 ? (
-                  <div className="p-12 text-center text-[#64778C]">
-                    <Search className="w-10 h-10 mx-auto text-[#0866C6] opacity-30 mb-3" />
-                    <p className="text-base font-bold text-[#062B50]">No matching students found</p>
-                    <p className="text-xs sm:text-sm text-[#64778C] mt-1 max-w-sm mx-auto">
-                      Try adjusting your search query, class selection, institution, or status filter.
-                    </p>
+                {/* Non-card fallback status filter: only rendered when lookup errors exist */}
+                {totalUnableToLoad > 0 && (
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EFF5FC]">
+                    <span className="text-xs text-red-700 font-medium">
+                      {totalUnableToLoad} student status lookup{totalUnableToLoad === 1 ? '' : 's'} failed.
+                    </span>
                     <button
                       type="button"
-                      onClick={handleResetFilters}
-                      className="mt-4 px-4 py-2 rounded-xl bg-[#EBF4FE] text-[#0866C6] text-xs font-bold hover:bg-[#D9EAFE] transition-colors cursor-pointer"
+                      onClick={() =>
+                        setStatusFilter((prev) =>
+                          prev === 'Unable to Load' ? 'all' : 'Unable to Load'
+                        )
+                      }
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer whitespace-nowrap ${
+                        statusFilter === 'Unable to Load'
+                          ? 'bg-red-600 text-white border-red-600'
+                          : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+                      }`}
                     >
-                      Reset All Filters
+                      {statusFilter === 'Unable to Load'
+                        ? 'Showing Unable to Load'
+                        : `Filter Unable to Load (${totalUnableToLoad})`}
                     </button>
                   </div>
-                ) : (
-                  <>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="border-b border-[#E8F3FF] bg-[#F8FAFD] text-[11px] font-extrabold uppercase tracking-wider text-[#64778C]">
-                            <th className="py-3.5 px-6">Student Name</th>
-                            <th className="py-3.5 px-4">Class</th>
-                            <th className="py-3.5 px-4">Age</th>
-                            <th className="py-3.5 px-4">Institution / School</th>
-                            <th className="py-3.5 px-4">Status</th>
-                            <th className="py-3.5 px-6 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#E8F3FF] text-xs sm:text-sm">
-                          {paginatedStudents.map((student) => {
-                            const isStatusError = Boolean(statusErrors[student.id]);
-                            const currentStatus = isStatusError
-                              ? 'Unable to Load'
-                              : statusCache[student.id]?.status || student.status;
-                            return (
-                              <tr
-                                key={student.id}
-                                onClick={() => {
-                                  setSelectedStudentId(student.id);
-                                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                                }}
-                                className="hover:bg-[#F8FAFD] transition-colors cursor-pointer group"
-                              >
-                                <td className="py-4 px-6 font-bold text-[#062B50] group-hover:text-[#0866C6] transition-colors">
-                                  <div>{student.fullName}</div>
-                                  {student.email && (
-                                    <div className="text-[11px] font-normal text-[#64778C]">
-                                      {student.email}
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="py-4 px-4 font-semibold text-[#062B50]">
-                                  {formatClassDisplay(student.classGrade)}
-                                </td>
-                                <td className="py-4 px-4 text-[#5A6E85]">
-                                  {student.age ? `${student.age} yrs` : '—'}
-                                </td>
-                                <td className="py-4 px-4 text-[#5A6E85] max-w-xs truncate" title={student.schoolName}>
-                                  {student.schoolName}
-                                </td>
-                                <td className="py-4 px-4">
-                                  {currentStatus === 'Submitted' && (
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                      <span>Submitted</span>
-                                    </span>
-                                  )}
-                                  {currentStatus === 'In Progress' && (
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-bold border border-amber-200">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                      <span>In Progress</span>
-                                    </span>
-                                  )}
-                                  {currentStatus === 'Not Started' && (
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                                      <span>Not Started</span>
-                                    </span>
-                                  )}
-                                  {currentStatus === 'Unable to Load' && (
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-red-700 text-xs font-bold border border-red-200">
-                                      <AlertCircle className="w-3.5 h-3.5 text-red-600" />
-                                      <span>Unable to Load</span>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleRetryStudentStatus(student.id, e)}
-                                        disabled={retryingStatusIds.has(student.id)}
-                                        className="ml-1 underline text-[11px] font-semibold text-red-800 hover:text-red-950 cursor-pointer disabled:opacity-50"
-                                        title={statusErrors[student.id] || 'Retry status check'}
-                                      >
-                                        {retryingStatusIds.has(student.id) ? '...' : 'Retry'}
-                                      </button>
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-4 px-6 text-right">
-                                  <span className="text-xs font-bold text-[#0866C6] group-hover:underline">
-                                    View Answers &amp; Profile →
-                                  </span>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Pagination Bar */}
-                    <div className="p-4 bg-[#F8FAFD] border-t border-[#E8F3FF] flex flex-col sm:flex-row items-center justify-between gap-4">
-                      <div className="flex items-center gap-2 text-xs text-[#64778C]">
-                        <span>Rows per page:</span>
-                        <select
-                          value={pageSize}
-                          onChange={(e) => {
-                            setPageSize(Number(e.target.value));
-                            setCurrentPage(1);
-                          }}
-                          className="px-2 py-1 rounded-lg border border-[#D5E4F3] bg-white text-xs font-bold text-[#062B50] focus:outline-none focus:border-[#0866C6] cursor-pointer"
-                        >
-                          <option value="10">10</option>
-                          <option value="15">15</option>
-                          <option value="25">25</option>
-                          <option value="50">50</option>
-                        </select>
-                        <span className="ml-2">
-                          Page <strong className="text-[#062B50]">{currentPage}</strong> of{' '}
-                          <strong className="text-[#062B50]">{totalPages}</strong>
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setCurrentPage(1)}
-                          disabled={currentPage === 1}
-                          className="p-1.5 rounded-lg border border-[#D5E4F3] bg-white text-[#062B50] hover:bg-[#F2F7FC] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                          title="First Page"
-                        >
-                          <ChevronsLeft className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                          disabled={currentPage === 1}
-                          className="p-1.5 rounded-lg border border-[#D5E4F3] bg-white text-[#062B50] hover:bg-[#F2F7FC] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                          title="Previous Page"
-                        >
-                          <ChevronLeft className="w-4 h-4" />
-                        </button>
-
-                        <span className="px-3 py-1 text-xs font-bold text-[#0866C6] bg-[#EBF4FE] rounded-lg">
-                          {currentPage}
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                          disabled={currentPage >= totalPages}
-                          className="p-1.5 rounded-lg border border-[#D5E4F3] bg-white text-[#062B50] hover:bg-[#F2F7FC] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                          title="Next Page"
-                        >
-                          <ChevronRight className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCurrentPage(totalPages)}
-                          disabled={currentPage >= totalPages}
-                          className="p-1.5 rounded-lg border border-[#D5E4F3] bg-white text-[#062B50] hover:bg-[#F2F7FC] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                          title="Last Page"
-                        >
-                          <ChevronsRight className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </>
                 )}
+
+                {/* Result Count, Removable Active Filter Chips & Clear All */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2.5 border-t border-[#EFF5FC] text-xs text-[#5A6E85]">
+                  <span className="tabular-nums">
+                    Showing{' '}
+                    <strong className="text-[#062B50]">
+                      {filteredStudents.length === 0
+                        ? 0
+                        : `${(currentPage - 1) * pageSize + 1}–${Math.min(
+                            currentPage * pageSize,
+                            filteredStudents.length
+                          )}`}
+                    </strong>{' '}
+                    of <strong className="text-[#062B50]">{filteredStudents.length}</strong> students
+                    {filteredStudents.length !== students.length && (
+                      <span> (from {students.length} total)</span>
+                    )}
+                  </span>
+
+                  {activeFilterChips.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {activeFilterChips.map((chip) => (
+                        <button
+                          key={chip.key}
+                          type="button"
+                          onClick={() => {
+                            if (chip.key === 'search') setSearchQuery('');
+                            if (chip.key === 'class') setClassFilter('all');
+                            if (chip.key === 'institution') setInstitutionFilter('all');
+                            if (chip.key === 'status') setStatusFilter('all');
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#EBF4FE] text-[#0866C6] border border-[#D5E4F3] hover:bg-[#DCEBFC] transition-colors cursor-pointer max-w-[220px]"
+                          title={`Remove ${chip.label.toLowerCase()} filter`}
+                          aria-label={`Remove ${chip.label} filter: ${chip.valueLabel}`}
+                        >
+                          <span className="truncate">
+                            {chip.label}: {chip.valueLabel}
+                          </span>
+                          <X className="w-3 h-3 shrink-0" aria-hidden="true" />
+                        </button>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={handleResetFilters}
+                        className="px-2 py-1 text-xs font-bold text-[#0866C6] hover:underline cursor-pointer whitespace-nowrap"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Responsive Student Directory (Mobile Cards + Desktop Table + Pagination) */}
+              <AdminStudentList
+                studentListRef={studentListRef}
+                filteredStudents={filteredStudents}
+                paginatedStudents={paginatedStudents}
+                statusCache={statusCache}
+                statusErrors={statusErrors}
+                retryingStatusIds={retryingStatusIds}
+                currentPage={currentPage}
+                totalPages={totalPages}
+                pageSize={pageSize}
+                onSelectStudent={(studentId) => {
+                  setSelectedStudentId(studentId);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                onRetryStudentStatus={handleRetryStudentStatus}
+                onResetFilters={handleResetFilters}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={setPageSize}
+              />
             </div>
           )}
         </main>
